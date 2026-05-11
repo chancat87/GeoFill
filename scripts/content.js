@@ -248,8 +248,77 @@ function isDisabledLike(element) {
     );
 }
 
+function hasOptionalTokenIntent(element) {
+    if (!element) return false;
+    const text = [
+        element.id,
+        element.name,
+        element.placeholder,
+        element.className,
+        element.getAttribute?.('aria-label'),
+        element.getAttribute?.('title'),
+        element.getAttribute?.('data-field'),
+        element.getAttribute?.('data-testid'),
+        element.getAttribute?.('data-test'),
+        getLabelText(element)
+    ].filter(Boolean).join(' ');
+    const signature = compactIntentText(text);
+    const intentWords = normalizeIntentWords(text);
+
+    return hasAnyIntent(signature, [
+        'vpnbypass',
+        'bypasstoken',
+        'bypasscode',
+        'invitecode',
+        'invitationcode',
+        'referralcode',
+        'couponcode',
+        'promocode',
+        'promotioncode',
+        'discountcode',
+        'vouchercode',
+        'giftcard',
+        'accesscode',
+        'activationcode',
+        'licensekey',
+        'apikey',
+        'secretkey',
+        'verificationcode',
+        'authcode',
+        'otpauth',
+        'captcha'
+    ])
+        || hasIntentWord(intentWords, [
+            'vpn bypass',
+            'bypass token',
+            'bypass code',
+            'invite code',
+            'invitation code',
+            'referral code',
+            'coupon code',
+            'promo code',
+            'promotion code',
+            'discount code',
+            'voucher code',
+            'gift card',
+            'access code',
+            'activation code',
+            'license key',
+            'api key',
+            'secret key',
+            'verification code',
+            'auth code',
+            'otp',
+            'captcha'
+        ]);
+}
+
+function shouldSkipAutoFillElement(element) {
+    return hasOptionalTokenIntent(element);
+}
+
 function isFillableElement(element) {
-    return Boolean(element && isVisible(element) && !isDisabledLike(element) && !isReadOnlyLike(element));
+    return Boolean(element && isVisible(element) && !isDisabledLike(element) && !isReadOnlyLike(element) && !shouldSkipAutoFillElement(element));
 }
 
 const COUNTRY_ALIASES_FOR_SELECT = {
@@ -470,7 +539,7 @@ const FIELD_INTENTS = {
 };
 
 const SPECIAL_HANDLED_FIELDS = new Set([
-    'firstName', 'lastName', 'email', 'username',
+    'firstName', 'lastName', 'email', 'username', 'password',
     'address', 'city', 'state', 'zipCode',
     'country', 'phone',
     ...FIELD_INTENTS.birthdayInputKeys
@@ -1287,6 +1356,8 @@ function hasCurrentPasswordIntent(signature, intentWords, autocomplete = '') {
 
 function isTokenOrOptionalCodeField(element) {
     if (!element) return false;
+    if (hasOptionalTokenIntent(element)) return true;
+
     const signature = getElementSignature(element);
     const intentWords = getElementIntentWords(element);
 
@@ -1914,6 +1985,14 @@ function fillForm(data, options = {}) {
         results['identityParts'] = `filled ${identityFilled} field(s)`;
     }
 
+    const passwordFilled = fillPasswordParts(data, usedElements);
+    if (passwordFilled > 0) {
+        filledCount += passwordFilled;
+        results['password'] = `filled ${passwordFilled} field(s)`;
+    } else if (data.password) {
+        results['password'] = 'not found';
+    }
+
     const countryPhoneFilled = fillCountryAndPhoneParts(data, usedElements);
     if (countryPhoneFilled > 0) {
         filledCount += countryPhoneFilled;
@@ -1943,22 +2022,6 @@ function fillForm(data, options = {}) {
 
         // 这些字段前面已经走专项拆分/匹配逻辑，避免重复覆盖。
         if (SPECIAL_HANDLED_FIELDS.has(fieldName)) {
-            continue;
-        }
-
-        // 密码字段需要填写所有匹配项（密码 + 确认密码）
-        if (fieldName === 'password') {
-            const elements = findPasswordFields().filter((element) => !usedElements.has(element));
-            if (elements.length > 0) {
-                elements.forEach(element => {
-                    simulateInput(element, value);
-                    usedElements.add(element);
-                    filledCount++;
-                });
-                results[fieldName] = `filled ${elements.length} field(s)`;
-            } else {
-                results[fieldName] = 'not found';
-            }
             continue;
         }
 
@@ -2936,6 +2999,23 @@ function fillIdentityParts(data, usedElements) {
         usedElements.add(usernameField);
         filled++;
     }
+
+    return filled;
+}
+
+function fillPasswordParts(data, usedElements) {
+    const password = String(data.password || '');
+    if (!password) return 0;
+
+    const elements = findPasswordFields().filter((element) => !usedElements.has(element));
+    if (elements.length === 0) return 0;
+
+    let filled = 0;
+    elements.forEach((element) => {
+        simulateInput(element, password);
+        usedElements.add(element);
+        filled++;
+    });
 
     return filled;
 }

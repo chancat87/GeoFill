@@ -599,6 +599,28 @@ test('fillForm does not treat vpn bypass token as password confirmation', () => 
     assert.equal(result.results.password, 'filled 2 field(s)');
 });
 
+test('fillForm never uses vpn bypass token as an address or city fallback', () => {
+    const password = makeInput({ id: 'password', name: 'password', type: 'password', labels: ['Password'] });
+    const confirm = makeInput({ id: 'confirm_password', name: 'confirm_password', type: 'password', labels: ['Confirm Password'] });
+    const token = makeInput({ id: 'vpn_bypass_token', name: 'vpn_bypass_token', type: 'text', labels: ['VPN Bypass Token (Optional)'] });
+
+    const sandbox = buildFillSandbox([password, confirm, token]);
+    const result = sandbox.fillForm({
+        password: 'SamePass123',
+        address: '350 5th Ave',
+        city: 'New York',
+        state: 'New York'
+    });
+
+    assert.equal(password._v, 'SamePass123');
+    assert.equal(confirm._v, 'SamePass123');
+    assert.equal(token._v, undefined);
+    assert.equal(result.results.password, 'filled 2 field(s)');
+    assert.equal(result.results.addressParts, undefined);
+    assert.equal(result.results.city, undefined);
+    assert.equal(result.results.state, undefined);
+});
+
 test('fillForm only fills two password fields when optional token also has password type', () => {
     const password = makeInput({ id: 'new_password', name: 'new_password', type: 'password', labels: ['Password'] });
     const confirm = makeInput({ id: 'new_password_confirmation', name: 'new_password_confirmation', type: 'password', labels: ['Confirm Password'] });
@@ -1060,6 +1082,15 @@ test('scanForm skips non fillable fields', () => {
     assert.equal(result.fields.map((field) => field.id).join(','), 'visible_email');
 });
 
+test('scanForm skips vpn bypass token fields', () => {
+    const token = makeInput({ id: 'vpn_bypass_token', name: 'vpn_bypass_token', labels: ['VPN Bypass Token (Optional)'] });
+
+    const sandbox = buildFillSandbox([token]);
+    const result = sandbox.scanForm();
+
+    assert.equal(result.fields.length, 0);
+});
+
 test('fillFormSmart skips readonly and aria disabled mapped fields', async () => {
     const readonlyEmail = makeInput({ id: 'readonly_email', name: 'email', type: 'email', readOnly: true });
     const disabledPhone = makeInput({ id: 'disabled_phone', name: 'phone', type: 'tel', 'aria-disabled': 'true' });
@@ -1075,6 +1106,19 @@ test('fillFormSmart skips readonly and aria disabled mapped fields', async () =>
     assert.equal(result.filledCount, 0);
     assert.equal(result.results.readonly_email, 'not found');
     assert.equal(result.results.disabled_phone, 'not found');
+});
+
+test('fillFormSmart skips vpn bypass token mappings', async () => {
+    const token = makeInput({ id: 'vpn_bypass_token', name: 'vpn_bypass_token', labels: ['VPN Bypass Token (Optional)'] });
+
+    const sandbox = buildFillSandbox([token]);
+    const result = await sandbox.fillFormSmart({
+        vpn_bypass_token: 'New York'
+    }, { diagnosticDelays: [] });
+
+    assert.equal(token._v, undefined);
+    assert.equal(result.filledCount, 0);
+    assert.equal(result.results.vpn_bypass_token, 'not found');
 });
 
 test('fillFormWithDynamicRetry fills fields revealed after country change', async () => {
