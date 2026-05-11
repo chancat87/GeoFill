@@ -32,6 +32,113 @@ function buildFieldMetaMap(scanResult) {
     return map;
 }
 
+function normalizeFieldText(value) {
+    return String(value || '')
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .replace(/[^a-z0-9]+/gi, ' ')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function compactFieldText(value) {
+    return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function fieldTextParts(fieldMeta, key) {
+    return [
+        key,
+        fieldMeta?.id,
+        fieldMeta?.name,
+        fieldMeta?.label,
+        fieldMeta?.placeholder,
+        fieldMeta?.autocomplete,
+        fieldMeta?.context,
+        fieldMeta?.group
+    ].filter(Boolean).join(' ');
+}
+
+function hasFieldWord(words, candidates) {
+    const padded = ` ${normalizeFieldText(words)} `;
+    return candidates.some((candidate) => {
+        const normalized = normalizeFieldText(candidate);
+        return normalized && padded.includes(` ${normalized} `);
+    });
+}
+
+function isSensitiveOptionalCodeField(fieldMeta, key) {
+    const text = fieldTextParts(fieldMeta, key);
+    const compact = compactFieldText(text);
+    const words = normalizeFieldText(text);
+    return [
+        'vpnbypass',
+        'bypasstoken',
+        'bypasscode',
+        'token',
+        'invite',
+        'invitation',
+        'referral',
+        'refercode',
+        'coupon',
+        'promo',
+        'promotioncode',
+        'discountcode',
+        'voucher',
+        'giftcard',
+        'accesscode',
+        'activationcode',
+        'licensekey',
+        'apikey',
+        'secretkey',
+        'verificationcode',
+        'authcode',
+        'otp',
+        '2fa',
+        'mfa',
+        'captcha'
+    ].some((keyword) => compact.includes(keyword))
+        || hasFieldWord(words, [
+            'vpn',
+            'bypass',
+            'token',
+            'invite',
+            'invitation',
+            'referral',
+            'coupon',
+            'promo',
+            'promotion',
+            'discount',
+            'voucher',
+            'gift card',
+            'access code',
+            'activation code',
+            'license key',
+            'api key',
+            'secret key',
+            'verification code',
+            'auth code',
+            'otp',
+            'captcha'
+        ]);
+}
+
+function isPasswordFieldMeta(fieldMeta, key) {
+    const type = String(fieldMeta?.type || '').toLowerCase();
+    const autocomplete = compactFieldText(fieldMeta?.autocomplete || '');
+    const text = fieldTextParts(fieldMeta, key);
+    const compact = compactFieldText(text);
+    const words = normalizeFieldText(text);
+    const hasPassword = autocomplete === 'newpassword'
+        || autocomplete === 'currentpassword'
+        || ['password', 'passwd', 'pwd', 'newpassword', 'confirmpassword', 'passwordconfirmation', 'repeatpassword', 'reenterpassword']
+            .some((keyword) => compact.includes(keyword))
+        || hasFieldWord(words, ['password', 'pass', 'pwd']);
+
+    if (!hasPassword && type !== 'password') return false;
+    if (isSensitiveOptionalCodeField(fieldMeta, key) && !hasPassword) return false;
+    return true;
+}
+
 function sanitizeAiFormMapping(rawMapping, scanResult) {
     if (!rawMapping || typeof rawMapping !== 'object' || Array.isArray(rawMapping)) {
         return {};
@@ -43,7 +150,9 @@ function sanitizeAiFormMapping(rawMapping, scanResult) {
     for (const [rawKey, rawValue] of Object.entries(rawMapping)) {
         const key = String(rawKey || '').trim();
         if (!key) continue;
-        if (!fieldMap.has(key) && !/^field_\d+$/.test(key)) continue;
+        const fieldMeta = fieldMap.get(key);
+        if (!fieldMeta && !/^field_\d+$/.test(key)) continue;
+        if (fieldMeta && isSensitiveOptionalCodeField(fieldMeta, key) && !isPasswordFieldMeta(fieldMeta, key)) continue;
 
         let val = normalizeMappingValue(rawValue);
         if (!val) continue;
@@ -72,12 +181,17 @@ function sanitizeFormMapping(mapping, scanResult) {
         }
 
         const fieldMeta = fields.find((f) => f.id === key || f.name === key);
+        if (fieldMeta && isSensitiveOptionalCodeField(fieldMeta, key) && !isPasswordFieldMeta(fieldMeta, key)) {
+            delete mapping[key];
+            return;
+        }
+
         const label = fieldMeta ? (fieldMeta.label || '').toLowerCase() : '';
         const type = fieldMeta ? (fieldMeta.type || '').toLowerCase() : '';
         const name = fieldMeta ? (fieldMeta.name || '').toLowerCase() : '';
         const lowerKey = key.toLowerCase();
 
-        const isPassword = type === 'password' || lowerKey.includes('password') || name.includes('password') || label.includes('password');
+        const isPassword = isPasswordFieldMeta(fieldMeta, key);
         const isEmail = type === 'email' || lowerKey.includes('email') || name.includes('email') || label.includes('email');
         const isPhone = type === 'tel' || lowerKey.includes('phone') || lowerKey.includes('mobile') || name.includes('phone') || label.includes('phone');
         const isZip = lowerKey.includes('zip') || lowerKey.includes('postal') || name.includes('zip') || label.includes('postal');

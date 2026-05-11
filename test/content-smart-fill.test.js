@@ -583,6 +583,38 @@ test('fillForm fills password and confirmation password fields', () => {
     assert.equal(result.results.password, 'filled 2 field(s)');
 });
 
+test('fillForm does not treat vpn bypass token as password confirmation', () => {
+    const password = makeInput({ id: 'password', name: 'password', type: 'password', labels: ['Password'] });
+    const confirm = makeInput({ id: 'confirm_password', name: 'confirm_password', type: 'password', labels: ['Confirm Password'] });
+    const token = makeInput({ id: 'vpn_bypass_token', name: 'vpn_bypass_token', type: 'text', labels: ['VPN Bypass Token (Optional)'] });
+
+    const sandbox = buildFillSandbox([password, confirm, token]);
+    const result = sandbox.fillForm({
+        password: 'Aa1!example'
+    });
+
+    assert.equal(password._v, 'Aa1!example');
+    assert.equal(confirm._v, 'Aa1!example');
+    assert.equal(token._v, undefined);
+    assert.equal(result.results.password, 'filled 2 field(s)');
+});
+
+test('fillForm only fills two password fields when optional token also has password type', () => {
+    const password = makeInput({ id: 'new_password', name: 'new_password', type: 'password', labels: ['Password'] });
+    const confirm = makeInput({ id: 'new_password_confirmation', name: 'new_password_confirmation', type: 'password', labels: ['Confirm Password'] });
+    const token = makeInput({ id: 'bypass', name: 'vpn_bypass_token', type: 'password', labels: ['VPN Bypass Token (Optional)'] });
+
+    const sandbox = buildFillSandbox([password, confirm, token]);
+    const result = sandbox.fillForm({
+        password: 'Aa1!example'
+    });
+
+    assert.equal(password._v, 'Aa1!example');
+    assert.equal(confirm._v, 'Aa1!example');
+    assert.equal(token._v, undefined);
+    assert.equal(result.results.password, 'filled 2 field(s)');
+});
+
 test('fillForm fills split name fields before full name fallback', () => {
     const first = makeInput({ id: 'given', name: 'given_name', autocomplete: 'given-name' });
     const last = makeInput({ id: 'family', name: 'family_name', autocomplete: 'family-name' });

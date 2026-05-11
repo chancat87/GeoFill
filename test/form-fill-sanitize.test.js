@@ -85,6 +85,49 @@ test('sanitizeFormMapping enforces password/email/phone/zip normalization', () =
     assert.equal(mapping.zip, '10001');
 });
 
+test('sanitizeFormMapping skips optional token and bypass fields', () => {
+    const s = loadFormFillSandbox();
+    const scanResult = {
+        fields: [
+            { id: 'pwd', name: 'password', type: 'password', label: 'Password' },
+            { id: 'confirm', name: 'password_confirmation', type: 'password', label: 'Confirm Password' },
+            { id: 'vpn', name: 'vpn_bypass_token', type: 'text', label: 'VPN Bypass Token (Optional)' },
+            { id: 'invite', name: 'invite_code', type: 'text', label: 'Invite Code (Optional)' }
+        ]
+    };
+
+    const mapping = {
+        pwd: 'aaa',
+        confirm: 'bbb',
+        vpn: 'should-not-fill',
+        invite: 'also-skip'
+    };
+
+    s.sanitizeFormMapping(mapping, scanResult);
+    assert.equal(mapping.pwd, 'StrongP@ss1');
+    assert.equal(mapping.confirm, 'StrongP@ss1');
+    assert.equal(Object.prototype.hasOwnProperty.call(mapping, 'vpn'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(mapping, 'invite'), false);
+});
+
+test('sanitizeAiFormMapping filters optional token mappings', () => {
+    const s = loadFormFillSandbox();
+    const scanResult = {
+        fields: [
+            { id: 'pwd', name: 'password', type: 'password', label: 'Password' },
+            { id: 'vpn', name: 'vpn_bypass_token', type: 'text', label: 'VPN Bypass Token (Optional)' }
+        ]
+    };
+
+    const out = s.sanitizeAiFormMapping({
+        pwd: 'StrongP@ss1',
+        vpn: 'token-value'
+    }, scanResult);
+
+    assert.equal(out.pwd, 'StrongP@ss1');
+    assert.equal(Object.prototype.hasOwnProperty.call(out, 'vpn'), false);
+});
+
 test('buildFillResultMessage summarizes validation issues', () => {
     const s = loadFormFillSandbox();
 

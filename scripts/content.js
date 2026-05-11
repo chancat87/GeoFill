@@ -1237,25 +1237,135 @@ function fillGenderRadio(value) {
     return false;
 }
 
-function isPasswordLikeField(element) {
-    if (!element) return false;
-    const type = String(element.type || '').toLowerCase();
-    if (type === 'password') return true;
+function hasPasswordIntent(signature, intentWords, autocomplete = '') {
+    return autocomplete === 'newpassword'
+        || autocomplete === 'currentpassword'
+        || hasAnyIntent(signature, [
+            'password',
+            'passwd',
+            'pwd',
+            'newpassword',
+            'confirmpassword',
+            'passwordconfirmation',
+            'repeatpassword',
+            'reenterpassword',
+            '密码',
+            '確認用',
+            'パスワード'
+        ])
+        || hasIntentWord(intentWords, ['password', 'pass', 'pwd']);
+}
 
-    const signature = getElementSignature(element);
+function hasConfirmPasswordIntent(signature, intentWords) {
     return hasAnyIntent(signature, [
-        'password',
-        'pass',
-        'pwd',
-        'newpassword',
         'confirmpassword',
         'passwordconfirmation',
         'repeatpassword',
         'reenterpassword',
-        '密码',
-        '確認用',
-        'パスワード'
-    ]);
+        'retypepassword',
+        'verifypassword',
+        'confirmarcontrasena',
+        '確認用'
+    ])
+        || hasIntentWord(intentWords, [
+            'confirm password',
+            'password confirmation',
+            'repeat password',
+            'reenter password',
+            're-enter password',
+            'retype password',
+            'verify password'
+        ])
+        || (hasPasswordIntent(signature, intentWords) && hasIntentWord(intentWords, ['confirm', 'confirmation', 'repeat', 'reenter', 'retype', 'verify']));
+}
+
+function hasCurrentPasswordIntent(signature, intentWords, autocomplete = '') {
+    return autocomplete === 'currentpassword'
+        || hasAnyIntent(signature, ['currentpassword', 'oldpassword', 'existingpassword'])
+        || (hasPasswordIntent(signature, intentWords, autocomplete) && hasIntentWord(intentWords, ['current', 'old', 'existing']));
+}
+
+function isTokenOrOptionalCodeField(element) {
+    if (!element) return false;
+    const signature = getElementSignature(element);
+    const intentWords = getElementIntentWords(element);
+
+    return hasAnyIntent(signature, [
+        'vpnbypass',
+        'bypasstoken',
+        'bypasscode',
+        'token',
+        'invite',
+        'invitation',
+        'referral',
+        'refercode',
+        'coupon',
+        'promo',
+        'promotioncode',
+        'discountcode',
+        'voucher',
+        'giftcard',
+        'accesscode',
+        'activationcode',
+        'licensekey',
+        'apikey',
+        'secretkey',
+        'verificationcode',
+        'authcode',
+        'otp',
+        '2fa',
+        'mfa',
+        'captcha'
+    ])
+        || hasIntentWord(intentWords, [
+            'vpn',
+            'bypass',
+            'token',
+            'invite',
+            'invitation',
+            'referral',
+            'coupon',
+            'promo',
+            'promotion',
+            'discount',
+            'voucher',
+            'gift card',
+            'access code',
+            'activation code',
+            'license key',
+            'api key',
+            'secret key',
+            'verification code',
+            'auth code',
+            'otp',
+            'captcha'
+        ]);
+}
+
+function getPasswordFieldRole(element) {
+    if (!element) return '';
+
+    const type = String(element.type || '').toLowerCase();
+    const autocomplete = compactIntentText(element.autocomplete || '');
+    const signature = getElementSignature(element);
+    const intentWords = getElementIntentWords(element);
+
+    // bypass/token/invite/coupon/code 类字段不是注册密码，即使 id/name 里包含 pass/code 也不自动填写。
+    if (isTokenOrOptionalCodeField(element) && !hasPasswordIntent(signature, intentWords, autocomplete)) {
+        return '';
+    }
+
+    if (!hasPasswordIntent(signature, intentWords, autocomplete) && type !== 'password') {
+        return '';
+    }
+
+    if (hasCurrentPasswordIntent(signature, intentWords, autocomplete)) return 'current';
+    if (hasConfirmPasswordIntent(signature, intentWords)) return 'confirm';
+    return 'primary';
+}
+
+function isPasswordLikeField(element) {
+    return Boolean(getPasswordFieldRole(element));
 }
 
 function findPasswordFields() {
@@ -1267,7 +1377,20 @@ function findPasswordFields() {
         if (!fields.includes(element)) fields.push(element);
     });
 
-    return fields;
+    const eligible = fields.filter((element) => {
+        const role = getPasswordFieldRole(element);
+        return role && role !== 'current';
+    });
+    const primary = eligible.find((element) => getPasswordFieldRole(element) === 'primary') || eligible[0];
+    if (!primary) return [];
+
+    const result = [primary];
+    const explicitConfirm = eligible.find((element) => element !== primary && getPasswordFieldRole(element) === 'confirm');
+    const fallbackConfirm = eligible.find((element) => element !== primary);
+    const confirm = explicitConfirm || fallbackConfirm;
+    if (confirm) result.push(confirm);
+
+    return result;
 }
 
 /**
