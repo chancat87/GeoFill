@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 事件绑定模块
  */
 
@@ -62,32 +62,17 @@ async function handleRegenerateAll() {
  * 尝试获取真实地址
  */
 async function tryFetchRealAddress(lockedValues) {
-    const addressApiEnabled = document.getElementById('useAddressApiToggle')?.checked !== false;
-
-    if (!addressApiEnabled || !window.generators.generateAddressAsync || lockedFields.has('address')) {
+    if (!await shouldUseAddressApi({ allowApi: true, requestPermission: true }) || !window.generators.generateAddressAsync || lockedFields.has('address')) {
         return;
     }
 
     try {
-        showToast('正在获取真实地址...');
-        const realAddress = await window.generators.generateAddressAsync(
-            currentData.country,
-            currentData.city
-        );
+        const realAddress = await generateAddressForCurrentContext(lockedValues, {
+            allowApi: true
+        });
 
-        if (realAddress && realAddress.address) {
-            currentData.address = realAddress.address;
-
-            if (realAddress.state && !lockedFields.has('state')) {
-                currentData.state = realAddress.state;
-            }
-            if (realAddress.zipCode && !lockedFields.has('zipCode')) {
-                currentData.zipCode = realAddress.zipCode;
-            }
-
-            const sourceText = realAddress.source === 'geoapify' ? 'Geoapify' :
-                realAddress.source === 'openstreetmap' ? 'OSM' : '本地';
-            showToast(`已获取真实地址 (${sourceText})`);
+        if (applyGeneratedAddress(realAddress, { forceAddress: true })) {
+            showAddressUpdatedToast(realAddress);
         }
     } catch (e) {
         log.info('地址 API 调用失败:', e);
@@ -104,6 +89,9 @@ async function handleCountryChange() {
     ipData.country = newCountry;
     ipData.city = '';
     ipData.region = '';
+    currentData.addressSource = '';
+    currentData.addressConfidence = '';
+    currentData.addressLastUpdatedAt = '';
 
     // 保存锁定字段的值
     const lockedValues = {};
@@ -120,6 +108,18 @@ async function handleCountryChange() {
         }
     });
 
+    if (!lockedFields.has('address') && window.generators.generateAddressAsync) {
+        try {
+            const syncedAddress = await generateAddressForCurrentContext(lockedValues, {
+                forceRefresh: true,
+                allowApi: false
+            });
+            applyGeneratedAddress(syncedAddress, { forceAddress: true });
+        } catch (e) {
+            log.info('切换国家后同步地址失败:', e);
+        }
+    }
+
     updateUI();
     saveDataToStorage();
     showToast(`已切换到 ${newCountry}`);
@@ -128,7 +128,7 @@ async function handleCountryChange() {
 /**
  * 处理单字段刷新
  */
-function handleFieldRefresh(fieldName) {
+async function handleFieldRefresh(fieldName) {
     if (!window.generators) return;
 
     // 如果字段被锁定，不进行刷新
@@ -138,6 +138,24 @@ function handleFieldRefresh(fieldName) {
     }
 
     updateCurrentDataFromInputs();
+    if (fieldName === 'address' && window.generators.generateAddressAsync) {
+        try {
+            showToast('正在刷新地址...');
+            const realAddress = await generateAddressForCurrentContext({}, {
+                forceRefresh: true,
+                allowApi: await shouldUseAddressApi({ allowApi: true, requestPermission: true })
+            });
+            if (applyGeneratedAddress(realAddress, { forceAddress: true })) {
+                updateUI();
+                saveDataToStorage();
+                showAddressUpdatedToast(realAddress);
+                return;
+            }
+        } catch (e) {
+            log.info('刷新地址失败，使用普通生成:', e);
+        }
+    }
+
     const result = window.generators.regenerateField(fieldName, currentData, ipData);
 
     if (result && result._isLocationUpdate) {
@@ -154,6 +172,22 @@ function handleFieldRefresh(fieldName) {
             currentData.zipCode = result.zipCode;
             if (elements.fields.zipCode) elements.fields.zipCode.value = result.zipCode;
         }
+
+        if (!lockedFields.has('address') && window.generators.generateAddressAsync) {
+            try {
+                const syncedAddress = await generateAddressForCurrentContext({}, {
+                    forceRefresh: true,
+                    allowApi: false
+                });
+                if (applyGeneratedAddress(syncedAddress, { forceAddress: true })) {
+                    showAddressUpdatedToast(syncedAddress);
+                }
+            } catch (e) {
+                log.info('同步同城地址失败:', e);
+            }
+        }
+
+        updateUI();
     } else {
         currentData[fieldName] = result;
         if (elements.fields[fieldName]) {
@@ -233,10 +267,32 @@ function bindEvents() {
         elements.fillForm.addEventListener('click', fillFormInPage);
     }
 
+    // 填写报告关闭
+    if (elements.fillReportDismiss) {
+        elements.fillReportDismiss.addEventListener('click', hideFillReport);
+    }
+
     // AI 开关
     if (elements.useAIToggle) {
         elements.useAIToggle.addEventListener('change', () => {
             chrome.storage.local.set({ 'geoFillUseAI': elements.useAIToggle.checked });
+        });
+    }
+
+    // 地址 API 默认关闭；开启时再申请外部地址接口权限。
+    if (elements.useAddressApiToggle) {
+        elements.useAddressApiToggle.addEventListener('change', async () => {
+            if (elements.useAddressApiToggle.checked) {
+                const granted = await ensureAddressApiPermission({ requestIfMissing: true });
+                if (granted) {
+                    await saveAddressApiToggle(true);
+                    showToast('地址 API 已开启');
+                }
+                return;
+            }
+
+            await saveAddressApiToggle(false);
+            showToast('地址 API 已关闭，使用本地地址池');
         });
     }
 
@@ -261,10 +317,15 @@ function bindEvents() {
 
     // 单字段刷新按钮
     document.querySelectorAll('.refresh-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            handleFieldRefresh(e.currentTarget.dataset.field);
+        btn.addEventListener('click', async (e) => {
+            await handleFieldRefresh(e.currentTarget.dataset.field);
         });
     });
+
+    // 地址质量徽章详情
+    if (elements.addressQualityBadge) {
+        elements.addressQualityBadge.addEventListener('click', showAddressQualityDetail);
+    }
 
     // 字段输入事件
     FIELD_NAMES.forEach(name => {
@@ -415,3 +476,4 @@ function bindHistoryEvents() {
         });
     }
 }
+

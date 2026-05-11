@@ -1,0 +1,62 @@
+[
+  {
+    "address": "1 Macquarie St",
+    "city": "Sydney",
+    "state": "New South Wales",
+    "zipCode": "2000"
+  },
+  {
+    "address": "200 George St",
+    "city": "Sydney",
+    "state": "New South Wales",
+    "zipCode": "2000"
+  },
+  {
+    "address": "101 Collins St",
+    "city": "Melbourne",
+    "state": "Victoria",
+    "zipCode": "3000"
+  },
+  {
+    "address": "480 Queen St",
+    "city": "Brisbane",
+    "state": "Queensland",
+    "zipCode": "4000"
+  },
+  {
+    "address": "240 St Georges Terrace",
+    "city": "Perth",
+    "state": "Western Australia",
+    "zipCode": "6000"
+  },
+  {
+    "address": "1 King William St",
+    "city": "Adelaide",
+    "state": "South Australia",
+    "zipCode": "5000"
+  },
+  {
+    "address": "15 London Cct",
+    "city": "Canberra",
+    "state": "Australian Capital Territory",
+    "zipCode": "2601"
+  },
+  {
+    "address": "89 Macquarie St",
+    "city": "Hobart",
+    "state": "Tasmania",
+    "zipCode": "7000"
+  },
+  {
+    "address": "12 Smith St",
+    "city": "Darwin",
+    "state": "Northern Territory",
+    "zipCode": "0800"
+  },
+  {
+    "address": "50 Cavill Ave",
+    "city": "Gold Coast",
+    "state": "Queensland",
+    "zipCode": "4217"
+  }
+]

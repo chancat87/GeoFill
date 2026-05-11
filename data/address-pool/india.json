@@ -1,0 +1,62 @@
+[
+  {
+    "address": "12 MG Road",
+    "city": "Mumbai",
+    "state": "Maharashtra",
+    "zipCode": "400001"
+  },
+  {
+    "address": "45 Linking Road",
+    "city": "Mumbai",
+    "state": "Maharashtra",
+    "zipCode": "400050"
+  },
+  {
+    "address": "8 Connaught Place",
+    "city": "Delhi",
+    "state": "Delhi",
+    "zipCode": "110001"
+  },
+  {
+    "address": "120 Janpath",
+    "city": "Delhi",
+    "state": "Delhi",
+    "zipCode": "110011"
+  },
+  {
+    "address": "50 Brigade Road",
+    "city": "Bangalore",
+    "state": "Karnataka",
+    "zipCode": "560001"
+  },
+  {
+    "address": "18 Park Street",
+    "city": "Kolkata",
+    "state": "West Bengal",
+    "zipCode": "700016"
+  },
+  {
+    "address": "32 Anna Salai",
+    "city": "Chennai",
+    "state": "Tamil Nadu",
+    "zipCode": "600002"
+  },
+  {
+    "address": "5 Residency Road",
+    "city": "Hyderabad",
+    "state": "Telangana",
+    "zipCode": "500001"
+  },
+  {
+    "address": "66 Ashram Road",
+    "city": "Ahmedabad",
+    "state": "Gujarat",
+    "zipCode": "380009"
+  },
+  {
+    "address": "14 FC Road",
+    "city": "Pune",
+    "state": "Maharashtra",
+    "zipCode": "411004"
+  }
+]

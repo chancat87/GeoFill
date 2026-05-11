@@ -1,0 +1,11 @@
+{
+  "name": "geofill-extension",
+  "private": true,
+  "version": "1.8.0",
+  "description": "GeoFill test runner metadata",
+  "scripts": {
+    "audit:address-pool": "node scripts/audit-address-pool.js",
+    "build:address-pool": "node scripts/build-address-pool.js",
+    "test": "node --test test/*.test.js"
+  }
+}

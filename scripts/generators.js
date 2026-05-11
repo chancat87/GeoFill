@@ -104,6 +104,7 @@ const CITY_COORDINATES = {
  */
 async function fetchRealAddressFromApi(lat, lon) {
   if (!geoapifyApiKey) return null;
+  if (typeof fetch !== 'function') return null;
 
   // 在城市中心附近小范围偏移 (约 300-500m)，避免落到其他城市
   const offsetLat = lat + (Math.random() - 0.5) * 0.005;
@@ -128,7 +129,8 @@ async function fetchRealAddressFromApi(lat, lon) {
         state: props.state || props.county,
         zipCode: props.postcode,
         country: props.country,
-        source: 'geoapify'
+        source: 'geoapify',
+        confidence: 'high'
       };
     }
   } catch (e) {
@@ -142,6 +144,8 @@ async function fetchRealAddressFromApi(lat, lon) {
  * 调用 OpenStreetMap Nominatim API 获取真实地址（免费，无需 Key）
  */
 async function fetchAddressFromOSM(lat, lon) {
+  if (typeof fetch !== 'function') return null;
+
   // 在城市中心附近小范围偏移 (约 300-500m)
   const offsetLat = lat + (Math.random() - 0.5) * 0.005;
   const offsetLon = lon + (Math.random() - 0.5) * 0.005;
@@ -186,7 +190,8 @@ async function fetchAddressFromOSM(lat, lon) {
         state: stateValue,
         zipCode: addr.postcode || '',
         country: addr.country || '',
-        source: 'openstreetmap'
+        source: 'openstreetmap',
+        confidence: 'medium'
       };
     }
   } catch (e) {
@@ -219,76 +224,253 @@ async function fetchRealAddressSmart(lat, lon) {
   return null;
 }
 
+// P0 国家本地真实地址池（优先使用，保障离线可用和稳定性）
+const LOCAL_VERIFIED_ADDRESS_POOL = (typeof globalThis !== 'undefined' && globalThis.LOCAL_VERIFIED_ADDRESS_POOL) ? globalThis.LOCAL_VERIFIED_ADDRESS_POOL : {};
+const LOCAL_VERIFIED_ADDRESS_POOL_RUNTIME_META = (typeof globalThis !== 'undefined' && globalThis.LOCAL_VERIFIED_ADDRESS_POOL_META) ? globalThis.LOCAL_VERIFIED_ADDRESS_POOL_META : {};
+
+const ADDRESS_PICK_STATE = {
+  recentByCountry: Object.create(null)
+};
+const ADDRESS_RECENT_LIMIT = 80;
+
+function normalizeAddressToken(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+function buildAddressEntryKey(entry) {
+  return [entry.address, entry.city, entry.state, entry.zipCode].join('|').toLowerCase();
+}
+
+function isSameAddressCity(entryCity, cityName) {
+  const normalizedEntryCity = normalizeAddressToken(entryCity);
+  const normalizedCityName = normalizeAddressToken(cityName);
+  return Boolean(normalizedEntryCity && normalizedCityName && normalizedEntryCity === normalizedCityName);
+}
+
+function getRecentAddressQueue(country) {
+  const normalizedCountry = normalizeCountry(country);
+  if (!ADDRESS_PICK_STATE.recentByCountry[normalizedCountry]) {
+    ADDRESS_PICK_STATE.recentByCountry[normalizedCountry] = [];
+  }
+  return ADDRESS_PICK_STATE.recentByCountry[normalizedCountry];
+}
+
+function pickLocalVerifiedAddress(country, cityName = '', options = {}) {
+  const normalizedCountry = normalizeCountry(country);
+  if (!Object.prototype.hasOwnProperty.call(LOCAL_VERIFIED_ADDRESS_POOL, normalizedCountry)) {
+    return null;
+  }
+  const pool = LOCAL_VERIFIED_ADDRESS_POOL[normalizedCountry];
+  if (!Array.isArray(pool) || pool.length === 0) {
+    return null;
+  }
+
+  const preferredCity = normalizeAddressToken(cityName);
+  const cityMatches = preferredCity
+    ? pool.filter((entry) => isSameAddressCity(entry.city, preferredCity))
+    : [];
+  if (options.requireCityMatch && preferredCity && cityMatches.length === 0) {
+    return null;
+  }
+  const candidatePool = cityMatches.length > 0 ? cityMatches : pool;
+
+  const recentQueue = getRecentAddressQueue(normalizedCountry);
+  let freshCandidates = candidatePool.filter((entry) => !recentQueue.includes(buildAddressEntryKey(entry)));
+  if (freshCandidates.length === 0) {
+    recentQueue.length = 0;
+    freshCandidates = candidatePool.slice();
+  }
+
+  const picked = randomChoice(freshCandidates);
+  if (!picked) return null;
+
+  const pickedKey = buildAddressEntryKey(picked);
+  recentQueue.push(pickedKey);
+  const maxRecent = Math.min(ADDRESS_RECENT_LIMIT, Math.max(10, pool.length * 3));
+  while (recentQueue.length > maxRecent) {
+    recentQueue.shift();
+  }
+
+  return {
+    address: picked.address,
+    city: picked.city,
+    state: picked.state || '',
+    zipCode: picked.zipCode || '',
+    country: normalizedCountry,
+    source: 'local_verified',
+    confidence: 'high'
+  };
+}
+
+function buildSyntheticAddress(country, locationContext = {}) {
+  const normalizedCountry = normalizeCountry(country || 'United States');
+  return {
+    address: generateAddress(normalizedCountry),
+    city: locationContext.city || generateCity(normalizedCountry),
+    state: locationContext.state || generateState(normalizedCountry),
+    zipCode: locationContext.zipCode || generateZipCode(normalizedCountry),
+    country: normalizedCountry,
+    source: 'synthetic',
+    confidence: 'low'
+  };
+}
+
+function pickInitialAddress(country, cityName = '', regionName = '') {
+  const normalizedCountry = normalizeCountry(country || 'United States');
+  const hasSpecificCity = Boolean(cityName && cityName !== 'Unknown');
+  const localVerified = pickLocalVerifiedAddress(normalizedCountry, cityName, {
+    requireCityMatch: hasSpecificCity
+  });
+  if (localVerified) {
+    return localVerified;
+  }
+
+  return buildSyntheticAddress(normalizedCountry, {
+    city: hasSpecificCity ? cityName : generateCity(normalizedCountry),
+    state: regionName || generateState(normalizedCountry),
+    zipCode: generateZipCode(normalizedCountry)
+  });
+}
+
 // 各国常见名字库
 const NAME_DATABASE = {
   // 英语国家
   en: {
     firstNames: ['James', 'John', 'Robert', 'Michael', 'William', 'David', 'Richard', 'Joseph', 'Thomas', 'Charles',
-      'Emma', 'Olivia', 'Ava', 'Isabella', 'Sophia', 'Mia', 'Charlotte', 'Amelia', 'Harper', 'Evelyn'],
+      'Emma', 'Olivia', 'Ava', 'Isabella', 'Sophia', 'Mia', 'Charlotte', 'Amelia', 'Harper', 'Evelyn',
+      'Daniel', 'Matthew', 'Christopher', 'Andrew', 'Joshua', 'Nicholas', 'Ethan', 'Benjamin', 'Samuel', 'Henry',
+      'Liam', 'Noah', 'Mason', 'Logan', 'Lucas', 'Ella', 'Scarlett', 'Grace', 'Chloe', 'Lily',
+      'Aria', 'Zoey', 'Natalie', 'Hannah', 'Layla', 'Nora', 'Riley', 'Aubrey', 'Addison', 'Penelope'],
     lastNames: ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez',
-      'Anderson', 'Taylor', 'Thomas', 'Moore', 'Jackson', 'Martin', 'Lee', 'Thompson', 'White', 'Harris']
+      'Anderson', 'Taylor', 'Thomas', 'Moore', 'Jackson', 'Martin', 'Lee', 'Thompson', 'White', 'Harris',
+      'Clark', 'Lewis', 'Walker', 'Hall', 'Allen', 'Young', 'King', 'Wright', 'Scott', 'Green',
+      'Baker', 'Adams', 'Nelson', 'Carter', 'Mitchell', 'Perez', 'Turner', 'Phillips', 'Campbell', 'Parker']
   },
   // 中文名（拼音）
   zh: {
     firstNames: ['Wei', 'Fang', 'Lei', 'Yang', 'Jing', 'Ming', 'Hua', 'Xin', 'Jun', 'Yan',
-      'Lin', 'Chen', 'Hao', 'Tao', 'Peng', 'Yun', 'Feng', 'Qiang', 'Bo', 'Kai'],
+      'Lin', 'Chen', 'Hao', 'Tao', 'Peng', 'Yun', 'Feng', 'Qiang', 'Bo', 'Kai',
+      'Ting', 'Xuan', 'Yu', 'Jia', 'Shan', 'Rui', 'Tian', 'Yue', 'Ning', 'Xiao',
+      'Bin', 'Chao', 'Dong', 'Guang', 'Jie', 'Ke', 'Nan', 'Qin', 'Ran', 'Zhe'],
     lastNames: ['Wang', 'Li', 'Zhang', 'Liu', 'Chen', 'Yang', 'Huang', 'Zhao', 'Wu', 'Zhou',
-      'Xu', 'Sun', 'Ma', 'Zhu', 'Hu', 'Guo', 'He', 'Lin', 'Luo', 'Gao']
+      'Xu', 'Sun', 'Ma', 'Zhu', 'Hu', 'Guo', 'He', 'Lin', 'Luo', 'Gao',
+      'Peng', 'Tang', 'Deng', 'Cao', 'Jiang', 'Fang', 'Xie', 'Song', 'Duan', 'Yao',
+      'Shen', 'Han', 'Lu', 'Wei', 'Qian', 'Hou', 'Xiong', 'Liao', 'Zeng', 'Pan']
   },
   // 日语名
   ja: {
     firstNames: ['Yuki', 'Haruto', 'Sota', 'Yuto', 'Riku', 'Sakura', 'Hina', 'Yui', 'Mio', 'Aoi',
-      'Ren', 'Takumi', 'Kaito', 'Hinata', 'Yuna', 'Akari', 'Mei', 'Rin', 'Koharu', 'Sora'],
+      'Ren', 'Takumi', 'Kaito', 'Hinata', 'Yuna', 'Akari', 'Mei', 'Rin', 'Koharu', 'Sora',
+      'Shota', 'Daiki', 'Kenta', 'Ryota', 'Sho', 'Ayaka', 'Haruka', 'Nanami', 'Misaki', 'Kana',
+      'Yuma', 'Itsuki', 'Kazuki', 'Nao', 'Mao', 'Riko', 'Noa', 'Momoka', 'Asahi', 'Kokoro'],
     lastNames: ['Sato', 'Suzuki', 'Takahashi', 'Tanaka', 'Watanabe', 'Ito', 'Yamamoto', 'Nakamura', 'Kobayashi', 'Kato',
-      'Yoshida', 'Yamada', 'Sasaki', 'Yamaguchi', 'Matsumoto', 'Inoue', 'Kimura', 'Hayashi', 'Shimizu', 'Yamazaki']
+      'Yoshida', 'Yamada', 'Sasaki', 'Yamaguchi', 'Matsumoto', 'Inoue', 'Kimura', 'Hayashi', 'Shimizu', 'Yamazaki',
+      'Mori', 'Abe', 'Ikeda', 'Hashimoto', 'Ishikawa', 'Nakajima', 'Maeda', 'Fujita', 'Ogawa', 'Goto',
+      'Okada', 'Hasegawa', 'Murakami', 'Ishii', 'Saito', 'Kondo', 'Imai', 'Miura', 'Fujii', 'Honda']
   },
   // 韩语名
   ko: {
     firstNames: ['Minho', 'Jinho', 'Junho', 'Seungmin', 'Jaemin', 'Yuna', 'Jiyeon', 'Soojin', 'Minjung', 'Hana',
-      'Jihoon', 'Dongwoo', 'Sunwoo', 'Yoojin', 'Minji', 'Soyeon', 'Daeun', 'Yerin', 'Chaewon', 'Jiwon'],
+      'Jihoon', 'Dongwoo', 'Sunwoo', 'Yoojin', 'Minji', 'Soyeon', 'Daeun', 'Yerin', 'Chaewon', 'Jiwon',
+      'Hyunwoo', 'Taeyang', 'Seojun', 'Eunwoo', 'Yejun', 'Jisoo', 'Seoyeon', 'Hayoon', 'Jiwoo', 'Sujin',
+      'Wonho', 'Minseok', 'Yejun', 'Seungwoo', 'Hyejin', 'Ara', 'Bora', 'Nari', 'Somin', 'Yeji'],
     lastNames: ['Kim', 'Lee', 'Park', 'Choi', 'Jung', 'Kang', 'Cho', 'Yoon', 'Jang', 'Lim',
-      'Han', 'Oh', 'Seo', 'Shin', 'Kwon', 'Hwang', 'Ahn', 'Song', 'Yoo', 'Hong']
+      'Han', 'Oh', 'Seo', 'Shin', 'Kwon', 'Hwang', 'Ahn', 'Song', 'Yoo', 'Hong',
+      'Moon', 'Baek', 'Nam', 'Sim', 'Jeon', 'Ryu', 'No', 'Bae', 'Ko', 'Heo',
+      'Ha', 'Jin', 'Gu', 'Son', 'Cha', 'Woo', 'Byun', 'Do', 'Yum', 'An']
   },
   // 德语名
   de: {
     firstNames: ['Maximilian', 'Alexander', 'Paul', 'Leon', 'Lukas', 'Emma', 'Mia', 'Hannah', 'Sofia', 'Anna',
-      'Felix', 'Jonas', 'Tim', 'David', 'Finn', 'Lena', 'Laura', 'Marie', 'Lea', 'Julia'],
+      'Felix', 'Jonas', 'Tim', 'David', 'Finn', 'Lena', 'Laura', 'Marie', 'Lea', 'Julia',
+      'Noah', 'Elias', 'Ben', 'Julian', 'Anton', 'Clara', 'Luisa', 'Johanna', 'Frieda', 'Ella',
+      'Moritz', 'Niklas', 'Simon', 'Tobias', 'Matteo', 'Emilia', 'Paula', 'Mila', 'Nele', 'Lina'],
     lastNames: ['Müller', 'Schmidt', 'Schneider', 'Fischer', 'Weber', 'Meyer', 'Wagner', 'Becker', 'Schulz', 'Hoffmann',
-      'Koch', 'Richter', 'Klein', 'Wolf', 'Schröder', 'Neumann', 'Schwarz', 'Zimmermann', 'Braun', 'Hofmann']
+      'Koch', 'Richter', 'Klein', 'Wolf', 'Schröder', 'Neumann', 'Schwarz', 'Zimmermann', 'Braun', 'Hofmann',
+      'Hartmann', 'Lange', 'Schmitt', 'Werner', 'Schmitz', 'Krause', 'Meier', 'Lehmann', 'Schmid', 'Schulze',
+      'Maier', 'Köhler', 'Herrmann', 'König', 'Walter', 'Mayr', 'Huber', 'Kaiser', 'Fuchs', 'Peters']
   },
   // 法语名
   fr: {
     firstNames: ['Jean', 'Pierre', 'Michel', 'André', 'Philippe', 'Marie', 'Jeanne', 'Françoise', 'Monique', 'Catherine',
-      'Lucas', 'Hugo', 'Louis', 'Gabriel', 'Emma', 'Léa', 'Chloé', 'Manon', 'Camille', 'Jade'],
+      'Lucas', 'Hugo', 'Louis', 'Gabriel', 'Emma', 'Léa', 'Chloé', 'Manon', 'Camille', 'Jade',
+      'Arthur', 'Nathan', 'Jules', 'Antoine', 'Tom', 'Louise', 'Sarah', 'Inès', 'Juliette', 'Zoé',
+      'Raphaël', 'Noah', 'Théo', 'Baptiste', 'Pauline', 'Lucie', 'Eva', 'Margaux', 'Anaïs', 'Clara'],
     lastNames: ['Martin', 'Bernard', 'Thomas', 'Petit', 'Robert', 'Richard', 'Durand', 'Dubois', 'Moreau', 'Laurent',
-      'Simon', 'Michel', 'Lefebvre', 'Leroy', 'Roux', 'David', 'Bertrand', 'Morel', 'Fournier', 'Girard']
+      'Simon', 'Michel', 'Lefebvre', 'Leroy', 'Roux', 'David', 'Bertrand', 'Morel', 'Fournier', 'Girard',
+      'Andre', 'Mercier', 'Dupont', 'Lambert', 'Bonnet', 'Francois', 'Martinez', 'Legrand', 'Garnier', 'Faure',
+      'Rousseau', 'Blanc', 'Henry', 'Chevalier', 'Muller', 'Perrin', 'Morin', 'Mathieu', 'Clement', 'Gauthier']
   },
   // 俄语名
   ru: {
     firstNames: ['Alexander', 'Dmitri', 'Maxim', 'Artem', 'Ivan', 'Anastasia', 'Maria', 'Daria', 'Anna', 'Sophia',
-      'Mikhail', 'Nikita', 'Andrei', 'Sergei', 'Alexei', 'Ekaterina', 'Olga', 'Natalia', 'Elena', 'Irina'],
+      'Mikhail', 'Nikita', 'Andrei', 'Sergei', 'Alexei', 'Ekaterina', 'Olga', 'Natalia', 'Elena', 'Irina',
+      'Vladimir', 'Kirill', 'Pavel', 'Roman', 'Denis', 'Tatiana', 'Veronika', 'Polina', 'Alina', 'Yulia',
+      'Fedor', 'Ilya', 'Konstantin', 'Oleg', 'Stepan', 'Ksenia', 'Vera', 'Ludmila', 'Galina', 'Svetlana'],
     lastNames: ['Ivanov', 'Smirnov', 'Kuznetsov', 'Popov', 'Vasiliev', 'Petrov', 'Sokolov', 'Mikhailov', 'Novikov', 'Fedorov',
-      'Morozov', 'Volkov', 'Alexeev', 'Lebedev', 'Semenov', 'Egorov', 'Pavlov', 'Kozlov', 'Stepanov', 'Nikolaev']
+      'Morozov', 'Volkov', 'Alexeev', 'Lebedev', 'Semenov', 'Egorov', 'Pavlov', 'Kozlov', 'Stepanov', 'Nikolaev',
+      'Orlov', 'Andreev', 'Makarov', 'Nikitin', 'Zakharov', 'Soloviev', 'Borisov', 'Yakovlev', 'Grigoriev', 'Romanov',
+      'Vorobyev', 'Danilov', 'Tarasov', 'Belov', 'Komarov', 'Kiselev', 'Mironov', 'Bogdanov', 'Vinogradov', 'Gerasimov']
   },
   // 西班牙语名
   es: {
     firstNames: ['Antonio', 'José', 'Manuel', 'Francisco', 'David', 'María', 'Carmen', 'Ana', 'Isabel', 'Laura',
-      'Pablo', 'Daniel', 'Alejandro', 'Carlos', 'Javier', 'Lucia', 'Marta', 'Paula', 'Sara', 'Elena'],
+      'Pablo', 'Daniel', 'Alejandro', 'Carlos', 'Javier', 'Lucia', 'Marta', 'Paula', 'Sara', 'Elena',
+      'Diego', 'Adrián', 'Sergio', 'Raúl', 'Álvaro', 'Sofía', 'Valeria', 'Julia', 'Claudia', 'Andrea',
+      'Mateo', 'Hugo', 'Iker', 'Marcos', 'Nicolás', 'Noa', 'Alba', 'Aitana', 'Emma', 'Vega'],
     lastNames: ['García', 'Fernandez', 'Gonzalez', 'Rodriguez', 'Lopez', 'Martinez', 'Sanchez', 'Perez', 'Gomez', 'Martin',
-      'Jimenez', 'Ruiz', 'Hernandez', 'Diaz', 'Moreno', 'Alvarez', 'Muñoz', 'Romero', 'Alonso', 'Gutierrez']
+      'Jimenez', 'Ruiz', 'Hernandez', 'Diaz', 'Moreno', 'Alvarez', 'Muñoz', 'Romero', 'Alonso', 'Gutierrez',
+      'Navarro', 'Torres', 'Dominguez', 'Vazquez', 'Ramos', 'Gil', 'Ramirez', 'Serrano', 'Blanco', 'Molina',
+      'Morales', 'Suarez', 'Ortega', 'Delgado', 'Castro', 'Ortiz', 'Rubio', 'Marin', 'Sanz', 'Iglesias']
+  },
+  // 意大利语名
+  it: {
+    firstNames: ['Luca', 'Marco', 'Matteo', 'Francesco', 'Giovanni', 'Andrea', 'Alessandro', 'Gabriele', 'Davide', 'Riccardo',
+      'Giulia', 'Sofia', 'Aurora', 'Ginevra', 'Alice', 'Emma', 'Martina', 'Chiara', 'Francesca', 'Elena',
+      'Tommaso', 'Leonardo', 'Samuele', 'Federico', 'Pietro', 'Beatrice', 'Noemi', 'Vittoria', 'Camilla', 'Irene'],
+    lastNames: ['Rossi', 'Russo', 'Ferrari', 'Esposito', 'Bianchi', 'Romano', 'Colombo', 'Ricci', 'Marino', 'Greco',
+      'Bruno', 'Gallo', 'Conti', 'De Luca', 'Mancini', 'Costa', 'Giordano', 'Rizzo', 'Lombardi', 'Moretti',
+      'Barbieri', 'Fontana', 'Santoro', 'Mariani', 'Rinaldi', 'Caruso', 'Ferrara', 'Galli', 'Martini', 'Leone']
+  },
+  // 葡萄牙语名（巴西/葡语地区）
+  pt: {
+    firstNames: ['Joao', 'Gabriel', 'Lucas', 'Mateus', 'Pedro', 'Guilherme', 'Rafael', 'Bruno', 'Diego', 'Caio',
+      'Maria', 'Ana', 'Julia', 'Beatriz', 'Larissa', 'Camila', 'Mariana', 'Isabela', 'Luiza', 'Helena',
+      'Thiago', 'Vinicius', 'Felipe', 'Eduardo', 'Arthur', 'Yasmin', 'Bianca', 'Aline', 'Patricia', 'Renata'],
+    lastNames: ['Silva', 'Santos', 'Oliveira', 'Souza', 'Lima', 'Pereira', 'Costa', 'Ferreira', 'Rodrigues', 'Almeida',
+      'Nascimento', 'Araujo', 'Carvalho', 'Gomes', 'Martins', 'Rocha', 'Dias', 'Ribeiro', 'Barbosa', 'Mendes',
+      'Cardoso', 'Teixeira', 'Correia', 'Monteiro', 'Moreira', 'Nunes', 'Moura', 'Freitas', 'Machado', 'Batista']
+  },
+  // 荷兰语名
+  nl: {
+    firstNames: ['Daan', 'Sem', 'Liam', 'Noah', 'Lucas', 'Milan', 'Levi', 'Finn', 'Bram', 'Jesse',
+      'Emma', 'Sophie', 'Julia', 'Tess', 'Mila', 'Sara', 'Nina', 'Lotte', 'Evi', 'Anna',
+      'Thijs', 'Ruben', 'Julian', 'Max', 'Pieter', 'Maud', 'Fleur', 'Yara', 'Roos', 'Iris'],
+    lastNames: ['de Jong', 'Jansen', 'de Vries', 'van den Berg', 'van Dijk', 'Bakker', 'Janssen', 'Visser', 'Smit', 'Meijer',
+      'de Boer', 'Mulder', 'de Groot', 'Bos', 'Vos', 'Peters', 'Hendriks', 'van Leeuwen', 'Dekker', 'Brouwer',
+      'van der Meer', 'Kok', 'Jacobs', 'Schouten', 'de Wit', 'Kuiper', 'Postma', 'Willems', 'de Graaf', 'van Beek']
   }
 };
 
 // 国家到语言映射
 const COUNTRY_LANG_MAP = {
   'United States': 'en', 'United Kingdom': 'en', 'Canada': 'en', 'Australia': 'en', 'New Zealand': 'en',
+  'India': 'en',
   'China': 'zh', 'Taiwan': 'zh', 'Hong Kong': 'zh', 'Singapore': 'zh',
   'Japan': 'ja',
   'South Korea': 'ko', 'Korea': 'ko',
   'Germany': 'de', 'Austria': 'de', 'Switzerland': 'de',
   'France': 'fr', 'Belgium': 'fr',
   'Russia': 'ru',
-  'Spain': 'es', 'Mexico': 'es', 'Argentina': 'es', 'Colombia': 'es', 'Peru': 'es', 'Chile': 'es'
+  'Spain': 'es', 'Mexico': 'es', 'Argentina': 'es', 'Colombia': 'es', 'Peru': 'es', 'Chile': 'es',
+  'Italy': 'it',
+  'Brazil': 'pt', 'Portugal': 'pt',
+  'Netherlands': 'nl'
 };
 
 // 各国电话号码格式配置
@@ -528,6 +710,36 @@ const STREET_NAMES = {
   'default': ['Main St', 'Central Ave', 'Park Rd', 'First St', 'Second Ave', 'Third St', 'North Rd', 'South Blvd']
 };
 
+function generateUnitSuffix(country) {
+  if (Math.random() <= 0.7) return '';
+
+  switch (country) {
+    case 'United States':
+    case 'Canada':
+      return `, Apt ${Math.floor(Math.random() * 900) + 100}`;
+    case 'United Kingdom':
+    case 'Australia':
+      return `, Flat ${Math.floor(Math.random() * 80) + 1}`;
+    case 'Singapore':
+      return `, #${String(Math.floor(Math.random() * 30) + 2).padStart(2, '0')}-${String(Math.floor(Math.random() * 99) + 1).padStart(2, '0')}`;
+    case 'Hong Kong':
+      return `, Flat ${randomChoice(['A', 'B', 'C', 'D'])}, ${Math.floor(Math.random() * 30) + 2}/F`;
+    case 'China':
+    case 'Taiwan':
+      return `, Unit ${Math.floor(Math.random() * 20) + 1}`;
+    case 'Japan':
+      return `-${Math.floor(Math.random() * 20) + 1}`;
+    case 'Germany':
+    case 'France':
+    case 'Spain':
+    case 'Italy':
+    case 'Netherlands':
+      return `, ${Math.floor(Math.random() * 5) + 1}${randomChoice(['A', 'B', 'C', ''])}`;
+    default:
+      return `, Unit ${Math.floor(Math.random() * 200) + 1}`;
+  }
+}
+
 // 城市-州/省关联数据（真实对应关系）
 const CITY_STATE_MAP = {
   'United States': [
@@ -743,11 +955,154 @@ const CITY_STATE_MAP = {
 // 当前选中的城市信息（用于保持城市和州的关联）
 let currentLocation = null;
 
+// 姓名生成状态（用于避免短时间内重复）
+const NAME_PICK_STATE = {
+  first: Object.create(null),
+  last: Object.create(null),
+  recentFullNames: Object.create(null)
+};
+const NAME_FULLNAME_RECENT_LIMIT = 240;
+
+// 姓名组合风格（按语言）
+const NAME_STYLE_CONFIG = {
+  en: {
+    compoundFirstProbability: 0.07,
+    hyphenFirstProbability: 0.06,
+    middleInitialProbability: 0.15,
+    compoundLastProbability: 0.08,
+    hyphenLastProbability: 0.04,
+    multiPartLastPrefixes: []
+  },
+  zh: {
+    compoundFirstProbability: 0.22,
+    twoCharGivenNameProbability: 0.62,
+    compoundLastProbability: 0.0,
+    hyphenFirstProbability: 0.0,
+    hyphenLastProbability: 0.0
+  },
+  ja: {
+    compoundFirstProbability: 0.0,
+    compoundLastProbability: 0.0,
+    hyphenFirstProbability: 0.0,
+    hyphenLastProbability: 0.0
+  },
+  ko: {
+    compoundFirstProbability: 0.14,
+    compoundLastProbability: 0.0,
+    hyphenFirstProbability: 0.0,
+    hyphenLastProbability: 0.0
+  },
+  de: {
+    compoundFirstProbability: 0.12,
+    hyphenFirstProbability: 0.04,
+    middleInitialProbability: 0.07,
+    compoundLastProbability: 0.13,
+    hyphenLastProbability: 0.05,
+    multiPartLastPrefixes: ['von']
+  },
+  fr: {
+    compoundFirstProbability: 0.18,
+    hyphenFirstProbability: 0.12,
+    middleInitialProbability: 0.06,
+    compoundLastProbability: 0.14,
+    hyphenLastProbability: 0.08,
+    multiPartLastPrefixes: ['de', 'du']
+  },
+  ru: {
+    compoundFirstProbability: 0.08,
+    hyphenFirstProbability: 0.0,
+    middleInitialProbability: 0.0,
+    compoundLastProbability: 0.04,
+    hyphenLastProbability: 0.02
+  },
+  es: {
+    compoundFirstProbability: 0.05,
+    hyphenFirstProbability: 0.04,
+    middleInitialProbability: 0.04,
+    compoundLastProbability: 0.52,
+    hyphenLastProbability: 0.02,
+    multiPartLastPrefixes: ['de', 'del']
+  },
+  it: {
+    compoundFirstProbability: 0.06,
+    hyphenFirstProbability: 0.05,
+    middleInitialProbability: 0.06,
+    compoundLastProbability: 0.28,
+    hyphenLastProbability: 0.03,
+    multiPartLastPrefixes: ['Di', 'De']
+  },
+  pt: {
+    compoundFirstProbability: 0.05,
+    hyphenFirstProbability: 0.04,
+    middleInitialProbability: 0.05,
+    compoundLastProbability: 0.64,
+    hyphenLastProbability: 0.03,
+    multiPartLastPrefixes: ['de', 'da', 'dos']
+  },
+  nl: {
+    compoundFirstProbability: 0.10,
+    hyphenFirstProbability: 0.03,
+    middleInitialProbability: 0.05,
+    compoundLastProbability: 0.20,
+    hyphenLastProbability: 0.03,
+    multiPartLastPrefixes: ['van', 'van der', 'de']
+  }
+};
+
+// 按性别划分的常见名（用于提升真实度）
+const NAME_GENDERED_FIRST_NAMES = {
+  en: {
+    male: ['James', 'John', 'Robert', 'Michael', 'William', 'David', 'Richard', 'Joseph', 'Thomas', 'Charles', 'Daniel', 'Matthew', 'Christopher', 'Andrew', 'Joshua', 'Nicholas', 'Ethan', 'Benjamin', 'Samuel', 'Henry', 'Liam', 'Noah', 'Logan', 'Lucas', 'Mason', 'Jackson', 'Aiden', 'Owen', 'Wyatt', 'Caleb'],
+    female: ['Emma', 'Olivia', 'Ava', 'Isabella', 'Sophia', 'Mia', 'Charlotte', 'Amelia', 'Harper', 'Evelyn', 'Ella', 'Scarlett', 'Grace', 'Chloe', 'Lily', 'Aria', 'Zoey', 'Natalie', 'Hannah', 'Layla', 'Nora', 'Riley', 'Aubrey', 'Addison', 'Penelope', 'Madison', 'Victoria', 'Stella', 'Lucy', 'Claire']
+  },
+  zh: {
+    male: ['Wei', 'Lei', 'Ming', 'Jun', 'Hao', 'Tao', 'Peng', 'Feng', 'Qiang', 'Bo', 'Kai', 'Bin', 'Chao', 'Dong', 'Guang', 'Jie', 'Ke', 'Ran', 'Zhe', 'Sheng', 'Yong', 'Xiang', 'Guo', 'Tian', 'Zhong'],
+    female: ['Fang', 'Jing', 'Hua', 'Xin', 'Yan', 'Lin', 'Yun', 'Ting', 'Xuan', 'Yu', 'Jia', 'Shan', 'Rui', 'Yue', 'Ning', 'Xiao', 'Qin', 'Lan', 'Na', 'Mei', 'Yi', 'Qian', 'Xue', 'Zhen', 'Man']
+  },
+  ja: {
+    male: ['Haruto', 'Sota', 'Yuto', 'Riku', 'Ren', 'Takumi', 'Kaito', 'Hinata', 'Sora', 'Shota', 'Daiki', 'Kenta', 'Ryota', 'Sho', 'Yuma', 'Itsuki', 'Kazuki', 'Asahi', 'Haruki', 'Taichi', 'Yuki'],
+    female: ['Sakura', 'Hina', 'Yui', 'Mio', 'Aoi', 'Yuna', 'Akari', 'Mei', 'Rin', 'Koharu', 'Ayaka', 'Haruka', 'Nanami', 'Misaki', 'Kana', 'Mao', 'Riko', 'Noa', 'Momoka', 'Kokoro', 'Yuki']
+  },
+  ko: {
+    male: ['Minho', 'Jinho', 'Junho', 'Seungmin', 'Jaemin', 'Jihoon', 'Dongwoo', 'Sunwoo', 'Hyunwoo', 'Taeyang', 'Seojun', 'Eunwoo', 'Yejun', 'Wonho', 'Minseok', 'Seungwoo', 'Sanghoon', 'Jongho', 'Byungjun', 'Kyungmin'],
+    female: ['Yuna', 'Jiyeon', 'Soojin', 'Minjung', 'Hana', 'Yoojin', 'Minji', 'Soyeon', 'Daeun', 'Yerin', 'Chaewon', 'Jiwon', 'Jisoo', 'Seoyeon', 'Hayoon', 'Jiwoo', 'Sujin', 'Hyejin', 'Ara', 'Yeji']
+  },
+  de: {
+    male: ['Maximilian', 'Alexander', 'Paul', 'Leon', 'Lukas', 'Felix', 'Jonas', 'Tim', 'David', 'Finn', 'Noah', 'Elias', 'Ben', 'Julian', 'Anton', 'Moritz', 'Niklas', 'Simon', 'Tobias', 'Matteo', 'Johannes', 'Karl'],
+    female: ['Emma', 'Mia', 'Hannah', 'Sofia', 'Anna', 'Lena', 'Laura', 'Marie', 'Lea', 'Julia', 'Clara', 'Luisa', 'Johanna', 'Frieda', 'Ella', 'Emilia', 'Paula', 'Mila', 'Nele', 'Lina', 'Katharina', 'Theresa']
+  },
+  fr: {
+    male: ['Jean', 'Pierre', 'Michel', 'Andre', 'Philippe', 'Lucas', 'Hugo', 'Louis', 'Gabriel', 'Arthur', 'Nathan', 'Jules', 'Antoine', 'Tom', 'Raphael', 'Noah', 'Theo', 'Baptiste', 'Mathis', 'Maxime', 'Adrien'],
+    female: ['Marie', 'Jeanne', 'Francoise', 'Monique', 'Catherine', 'Emma', 'Lea', 'Chloe', 'Manon', 'Camille', 'Jade', 'Louise', 'Sarah', 'Ines', 'Juliette', 'Zoe', 'Pauline', 'Lucie', 'Eva', 'Margaux', 'Anais', 'Clara']
+  },
+  ru: {
+    male: ['Alexander', 'Dmitri', 'Maxim', 'Artem', 'Ivan', 'Mikhail', 'Nikita', 'Andrei', 'Sergei', 'Alexei', 'Vladimir', 'Kirill', 'Pavel', 'Roman', 'Denis', 'Fedor', 'Ilya', 'Konstantin', 'Oleg', 'Stepan'],
+    female: ['Anastasia', 'Maria', 'Daria', 'Anna', 'Sofia', 'Ekaterina', 'Olga', 'Natalia', 'Elena', 'Irina', 'Tatiana', 'Veronika', 'Polina', 'Alina', 'Yulia', 'Ksenia', 'Vera', 'Ludmila', 'Galina', 'Svetlana']
+  },
+  es: {
+    male: ['Antonio', 'Jose', 'Manuel', 'Francisco', 'David', 'Pablo', 'Daniel', 'Alejandro', 'Carlos', 'Javier', 'Diego', 'Adrian', 'Sergio', 'Raul', 'Alvaro', 'Mateo', 'Hugo', 'Iker', 'Marcos', 'Nicolas'],
+    female: ['Maria', 'Carmen', 'Ana', 'Isabel', 'Laura', 'Lucia', 'Marta', 'Paula', 'Sara', 'Elena', 'Sofia', 'Valeria', 'Julia', 'Claudia', 'Andrea', 'Noa', 'Alba', 'Aitana', 'Emma', 'Vega']
+  },
+  it: {
+    male: ['Luca', 'Marco', 'Matteo', 'Francesco', 'Giovanni', 'Andrea', 'Alessandro', 'Gabriele', 'Davide', 'Riccardo', 'Tommaso', 'Leonardo', 'Samuele', 'Federico', 'Pietro', 'Giuseppe', 'Nicolo', 'Stefano', 'Daniele', 'Cristiano'],
+    female: ['Giulia', 'Sofia', 'Aurora', 'Ginevra', 'Alice', 'Emma', 'Martina', 'Chiara', 'Francesca', 'Elena', 'Beatrice', 'Noemi', 'Vittoria', 'Camilla', 'Irene', 'Valentina', 'Greta', 'Anna', 'Marta', 'Serena']
+  },
+  pt: {
+    male: ['Joao', 'Gabriel', 'Lucas', 'Mateus', 'Pedro', 'Guilherme', 'Rafael', 'Bruno', 'Diego', 'Caio', 'Thiago', 'Vinicius', 'Felipe', 'Eduardo', 'Arthur', 'Henrique', 'Vitor', 'Rodrigo', 'Leonardo', 'André'],
+    female: ['Maria', 'Ana', 'Julia', 'Beatriz', 'Larissa', 'Camila', 'Mariana', 'Isabela', 'Luiza', 'Helena', 'Yasmin', 'Bianca', 'Aline', 'Patricia', 'Renata', 'Carolina', 'Gabriela', 'Daniela', 'Fernanda', 'Amanda']
+  },
+  nl: {
+    male: ['Daan', 'Sem', 'Liam', 'Noah', 'Lucas', 'Milan', 'Levi', 'Finn', 'Bram', 'Jesse', 'Thijs', 'Ruben', 'Julian', 'Max', 'Pieter', 'Sven', 'Jeroen', 'Koen', 'Niels', 'Maarten'],
+    female: ['Emma', 'Sophie', 'Julia', 'Tess', 'Mila', 'Sara', 'Nina', 'Lotte', 'Evi', 'Anna', 'Maud', 'Fleur', 'Yara', 'Roos', 'Iris', 'Noor', 'Esmee', 'Femke', 'Ilse', 'Anouk']
+  }
+};
+
 /**
  * 获取指定国家对应的语言
  */
 function getLanguageForCountry(country) {
-  return COUNTRY_LANG_MAP[country] || 'en';
+  const normalizedCountry = normalizeCountry(country);
+  return COUNTRY_LANG_MAP[normalizedCountry] || 'en';
 }
 
 /**
@@ -755,6 +1110,217 @@ function getLanguageForCountry(country) {
  */
 function randomChoice(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
+}
+
+/**
+ * 概率判断
+ */
+function chance(probability) {
+  return Math.random() < probability;
+}
+
+/**
+ * 归一化性别输入
+ */
+function normalizeGender(gender) {
+  const value = String(gender || '').trim().toLowerCase();
+  if (value === 'male' || value === 'female') return value;
+  return null;
+}
+
+/**
+ * 规范化用户名片段：转小写、去重音、去非字母数字
+ */
+function normalizeNameToken(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .toLowerCase();
+}
+
+/**
+ * 从姓名生成适合用户名/邮箱本地部分的 token
+ */
+function nameToUsernameToken(value) {
+  const normalized = normalizeNameToken(value);
+  return normalized || 'user';
+}
+
+/**
+ * 获取语言对应姓名组合风格
+ */
+function getNameStyleConfig(lang) {
+  return NAME_STYLE_CONFIG[lang] || NAME_STYLE_CONFIG.en;
+}
+
+/**
+ * 获取指定语言+性别的名字池
+ */
+function getFirstNamePool(lang, gender, fallbackNames) {
+  const langPool = NAME_GENDERED_FIRST_NAMES[lang];
+  const normalizedGender = normalizeGender(gender);
+
+  if (!langPool || !normalizedGender) {
+    return fallbackNames;
+  }
+
+  const list = langPool[normalizedGender];
+  if (Array.isArray(list) && list.length > 0) {
+    return list;
+  }
+
+  return fallbackNames;
+}
+
+/**
+ * 生成更自然的名字（双名、连字符、中间名首字母等）
+ */
+function composeFirstName(country, lang, firstNames, gender) {
+  const style = getNameStyleConfig(lang);
+  const normalizedCountry = normalizeCountry(country);
+  const firstNamePool = getFirstNamePool(lang, gender, firstNames);
+  const genderKey = normalizeGender(gender) || 'any';
+  const base = pickNameFromBag('first', normalizedCountry, lang, firstNamePool, genderKey) || randomChoice(firstNamePool);
+  if (!base) return 'Alex';
+
+  // 中文：更常见双字名（以拼音方式展示）
+  if (lang === 'zh') {
+    if (chance(style.twoCharGivenNameProbability || 0)) {
+      let second = pickNameFromBag('first', normalizedCountry, lang, firstNamePool, genderKey) || randomChoice(firstNamePool);
+      if (second === base) {
+        second = randomChoice(firstNamePool);
+      }
+      const merged = `${base}${second}`;
+      return merged.length > 12 ? base : merged;
+    }
+    return base;
+  }
+
+  // 其他语言：复合名
+  if (chance(style.compoundFirstProbability || 0)) {
+    let second = pickNameFromBag('first', normalizedCountry, lang, firstNamePool, genderKey) || randomChoice(firstNamePool);
+    if (!second) second = base;
+    if (second === base) second = randomChoice(firstNamePool) || second;
+
+    // 西语/意语/葡语/荷兰语更常见双姓而非双名，减少双名占比
+    if (['es', 'it', 'pt', 'nl'].includes(lang) && chance(0.7)) {
+      return base;
+    }
+
+    if (chance(style.hyphenFirstProbability || 0)) {
+      return `${base}-${second}`;
+    }
+    return `${base} ${second}`;
+  }
+
+  // 可选中间首字母
+  if (chance(style.middleInitialProbability || 0)) {
+    const letter = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+    return `${base} ${letter}.`;
+  }
+
+  return base;
+}
+
+/**
+ * 生成更自然的姓氏（双姓、前缀姓、连字符姓）
+ */
+function composeLastName(country, lang, lastNames) {
+  const style = getNameStyleConfig(lang);
+  const normalizedCountry = normalizeCountry(country);
+  const base = pickNameFromBag('last', normalizedCountry, lang, lastNames) || randomChoice(lastNames);
+  if (!base) return 'Smith';
+
+  if (!chance(style.compoundLastProbability || 0)) {
+    return base;
+  }
+
+  let second = pickNameFromBag('last', normalizedCountry, lang, lastNames) || randomChoice(lastNames);
+  if (!second) second = base;
+  if (second === base) second = randomChoice(lastNames) || second;
+
+  if (chance(style.hyphenLastProbability || 0)) {
+    return `${base}-${second}`;
+  }
+
+  const prefixes = style.multiPartLastPrefixes || [];
+  if (prefixes.length > 0 && chance(0.52)) {
+    const prefix = randomChoice(prefixes);
+    return `${prefix} ${second}`;
+  }
+
+  // 西语/葡语地区：更常见双姓（父姓 + 母姓）
+  if (lang === 'es' || lang === 'pt') {
+    return `${base} ${second}`;
+  }
+
+  return `${base} ${second}`;
+}
+
+/**
+ * 原地洗牌（Fisher-Yates）
+ */
+function shuffleArray(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+/**
+ * 从“洗牌池”中取姓名，确保池子用完前不重复
+ */
+function pickNameFromBag(type, country, lang, sourceNames, variantKey = '') {
+  const normalizedCountry = normalizeCountry(country);
+  const key = variantKey ? `${normalizedCountry}:${lang}:${variantKey}` : `${normalizedCountry}:${lang}`;
+  const state = NAME_PICK_STATE[type];
+
+  if (!state[key] || state[key].length === 0) {
+    const uniqueNames = Array.from(new Set((sourceNames || []).filter(Boolean)));
+    state[key] = shuffleArray(uniqueNames.slice());
+  }
+
+  if (!state[key] || state[key].length === 0) {
+    return '';
+  }
+
+  return state[key].pop();
+}
+
+/**
+ * 获取最近使用的全名队列
+ */
+function getRecentFullNameQueue(country) {
+  const normalizedCountry = normalizeCountry(country);
+  if (!NAME_PICK_STATE.recentFullNames[normalizedCountry]) {
+    NAME_PICK_STATE.recentFullNames[normalizedCountry] = [];
+  }
+  return NAME_PICK_STATE.recentFullNames[normalizedCountry];
+}
+
+/**
+ * 判断全名是否最近已使用
+ */
+function isRecentFullName(country, firstName, lastName) {
+  const fullName = `${firstName || ''} ${lastName || ''}`.trim().toLowerCase();
+  if (!fullName) return false;
+  const queue = getRecentFullNameQueue(country);
+  return queue.includes(fullName);
+}
+
+/**
+ * 记录最近使用的全名
+ */
+function rememberFullName(country, firstName, lastName) {
+  const fullName = `${firstName || ''} ${lastName || ''}`.trim().toLowerCase();
+  if (!fullName) return;
+  const queue = getRecentFullNameQueue(country);
+  queue.push(fullName);
+  if (queue.length > NAME_FULLNAME_RECENT_LIMIT) {
+    queue.splice(0, queue.length - NAME_FULLNAME_RECENT_LIMIT);
+  }
 }
 
 /**
@@ -768,36 +1334,72 @@ function randomDigits(length) {
   return result;
 }
 
+function randomDigitFrom(digits) {
+  return digits[Math.floor(Math.random() * digits.length)];
+}
+
 /**
  * 生成随机名字
  */
-function generateFirstName(country) {
-  const lang = getLanguageForCountry(country);
+function generateFirstName(country, gender = null) {
+  const normalizedCountry = normalizeCountry(country);
+  const lang = getLanguageForCountry(normalizedCountry);
   const names = NAME_DATABASE[lang] || NAME_DATABASE.en;
-  return randomChoice(names.firstNames);
+  return composeFirstName(normalizedCountry, lang, names.firstNames, gender);
 }
 
 /**
  * 生成随机姓氏
  */
 function generateLastName(country) {
-  const lang = getLanguageForCountry(country);
+  const normalizedCountry = normalizeCountry(country);
+  const lang = getLanguageForCountry(normalizedCountry);
   const names = NAME_DATABASE[lang] || NAME_DATABASE.en;
-  return randomChoice(names.lastNames);
+  return composeLastName(normalizedCountry, lang, names.lastNames);
+}
+
+/**
+ * 生成姓名组合（带全名去重）
+ */
+function generateNamePair(country, gender = null) {
+  const normalizedCountry = normalizeCountry(country);
+  const maxAttempts = 8;
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const firstName = generateFirstName(normalizedCountry, gender);
+    const lastName = generateLastName(normalizedCountry);
+    if (!isRecentFullName(normalizedCountry, firstName, lastName)) {
+      rememberFullName(normalizedCountry, firstName, lastName);
+      return { firstName, lastName };
+    }
+  }
+
+  const firstName = generateFirstName(normalizedCountry, gender);
+  const lastName = generateLastName(normalizedCountry);
+  rememberFullName(normalizedCountry, firstName, lastName);
+  return { firstName, lastName };
 }
 
 /**
  * 生成用户名
  */
 function generateUsername(firstName, lastName) {
+  const first = nameToUsernameToken(firstName);
+  const last = nameToUsernameToken(lastName);
+  const compactLast = last.replace(/[^a-z0-9]/g, '');
+  const compactFirst = first.replace(/[^a-z0-9]/g, '');
   const styles = [
-    () => `${firstName.toLowerCase()}${lastName.toLowerCase()}${randomDigits(2)}`,
-    () => `${firstName.toLowerCase()}_${lastName.toLowerCase()}`,
-    () => `${firstName.toLowerCase()}${randomDigits(4)}`,
-    () => `${lastName.toLowerCase()}.${firstName.toLowerCase()}`,
-    () => `${firstName.toLowerCase()[0]}${lastName.toLowerCase()}${randomDigits(3)}`
+    () => `${first}${last}${randomDigits(2)}`,
+    () => `${first}_${last}`,
+    () => `${first}${randomDigits(4)}`,
+    () => `${last}.${first}`,
+    () => `${first[0] || 'u'}${last}${randomDigits(3)}`,
+    () => `${compactFirst}.${compactLast}${randomDigits(2)}`,
+    () => `${compactLast}${compactFirst[0] || 'u'}${randomDigits(3)}`,
+    () => `${compactFirst}${compactLast}${randomDigits(3)}`
   ];
-  return randomChoice(styles)();
+  const username = randomChoice(styles)();
+  return username.length > 28 ? username.slice(0, 28) : username;
 }
 
 /**
@@ -826,6 +1428,29 @@ function normalizeCountry(country) {
     }
   }
   return 'United States'; // 默认
+}
+
+function normalizeCountryIfKnown(country) {
+  if (!country) return null;
+  if (COUNTRY_ALIASES[country]) {
+    return COUNTRY_ALIASES[country];
+  }
+  if (COUNTRY_LANG_MAP[country]) {
+    return country;
+  }
+
+  const lowerCountry = String(country).toLowerCase();
+  for (const [alias, normalized] of Object.entries(COUNTRY_ALIASES)) {
+    if (alias.toLowerCase() === lowerCountry) {
+      return normalized;
+    }
+  }
+  for (const countryName of Object.keys(COUNTRY_LANG_MAP)) {
+    if (countryName.toLowerCase() === lowerCountry) {
+      return countryName;
+    }
+  }
+  return null;
 }
 
 /**
@@ -892,54 +1517,131 @@ function generatePassword() {
 /**
  * 生成电话号码（根据国家格式）
  */
+function isLowQualityPhoneNumber(number, protectedPrefixLength = 0) {
+  const digits = String(number || '').replace(/\D/g, '');
+  if (!digits) return true;
+
+  const checkDigits = digits.slice(Math.max(0, protectedPrefixLength));
+  if (!checkDigits) return true;
+
+  if (/^(\d)\1+$/.test(checkDigits)) return true;
+  if (/(?:1234|2345|3456|4567|5678|6789|9876|8765|7654|6543|5432|4321|0000|1111|2222|3333|4444|5555|6666|7777|8888|9999)/.test(checkDigits)) {
+    return true;
+  }
+  if (/(\d)\1{3,}/.test(checkDigits)) return true;
+  if (/^(\d{2,3})\1{2,}$/.test(checkDigits)) return true;
+
+  let ascRun = 1;
+  let descRun = 1;
+  for (let i = 1; i < checkDigits.length; i++) {
+    const prev = Number(checkDigits[i - 1]);
+    const curr = Number(checkDigits[i]);
+
+    ascRun = curr === prev + 1 ? ascRun + 1 : 1;
+    descRun = curr === prev - 1 ? descRun + 1 : 1;
+
+    if (ascRun >= 4 || descRun >= 4) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function randomPhoneTail(length, options = {}) {
+  const {
+    protectedPrefix = '',
+    firstDigits = '0123456789',
+    avoidStartingWith = []
+  } = options;
+  const maxAttempts = 80;
+  const prefix = String(protectedPrefix || '');
+  const protectedPrefixLength = prefix.length;
+  const blockedStarts = avoidStartingWith.map((value) => String(value));
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const first = randomDigitFrom(firstDigits);
+    const tail = first + randomDigits(Math.max(0, length - 1));
+    const candidate = prefix + tail;
+    if (blockedStarts.some((blocked) => tail.startsWith(blocked))) continue;
+    if (!isLowQualityPhoneNumber(candidate, protectedPrefixLength)) {
+      return tail;
+    }
+  }
+
+  return randomDigitFrom(firstDigits) + randomDigits(Math.max(0, length - 1));
+}
+
+function buildPhoneNumber(config, country) {
+  if (config.areaCodePrefixes) {
+    const areaCode = randomChoice(config.areaCodePrefixes);
+
+    if (config.mobileFirstDigit) {
+      const fixedPrefix = areaCode + config.mobileFirstDigit;
+      return {
+        number: fixedPrefix + randomPhoneTail(config.length - fixedPrefix.length, {
+          protectedPrefix: fixedPrefix
+        }),
+        protectedPrefixLength: fixedPrefix.length
+      };
+    }
+
+    const tailLength = config.length - areaCode.length;
+    const firstDigits = country === 'United States' || country === 'Canada' ? '23456789' : '0123456789';
+    const avoidStartingWith = country === 'United States' || country === 'Canada'
+      ? ['555', '211', '311', '411', '511', '611', '711', '811', '911', '000']
+      : ['000'];
+    return {
+      number: areaCode + randomPhoneTail(tailLength, {
+        protectedPrefix: areaCode,
+        firstDigits,
+        avoidStartingWith
+      }),
+      protectedPrefixLength: areaCode.length
+    };
+  }
+
+  if (config.mobilePrefixes) {
+    const prefix = randomChoice(config.mobilePrefixes);
+    return {
+      number: prefix + randomPhoneTail(config.length - prefix.length, {
+        protectedPrefix: prefix
+      }),
+      protectedPrefixLength: prefix.length
+    };
+  }
+
+  return {
+    number: randomPhoneTail(config.length),
+    protectedPrefixLength: 0
+  };
+}
+
 function generatePhone(country) {
-  const config = PHONE_FORMATS[country];
+  const normalizedCountry = normalizeCountry(country);
+  const config = PHONE_FORMATS[normalizedCountry];
 
   // 如果没有配置，使用默认美国格式
   if (!config) {
     const defaultConfig = PHONE_FORMATS['United States'];
-    const prefix = randomChoice(defaultConfig.areaCodePrefixes);
-    const remaining = randomDigits(defaultConfig.length - prefix.length);
-    return `${defaultConfig.code} ${defaultConfig.format(prefix + remaining)}`;
+    const { number: phoneNumber } = buildPhoneNumber(defaultConfig, 'United States');
+    return `${defaultConfig.code} ${defaultConfig.format(phoneNumber)}`;
   }
 
   let phoneNumber = '';
+  let protectedPrefixLength = 0;
   let attempts = 0;
 
   // 循环生成，直到满足质量要求 (避免 1234, 0000 等)
   do {
     attempts++;
-    phoneNumber = '';
+    const built = buildPhoneNumber(config, normalizedCountry);
+    phoneNumber = built.number;
+    protectedPrefixLength = built.protectedPrefixLength;
 
-    // 处理有区号前缀的情况（如美国、加拿大、巴西、墨西哥）
-    if (config.areaCodePrefixes) {
-      const areaCode = randomChoice(config.areaCodePrefixes);
-
-      // 巴西特殊处理：区号 + 9 + 8位
-      if (config.mobileFirstDigit) {
-        const remaining = randomDigits(config.length - areaCode.length - 1);
-        phoneNumber = areaCode + config.mobileFirstDigit + remaining;
-      } else {
-        const remaining = randomDigits(config.length - areaCode.length);
-        phoneNumber = areaCode + remaining;
-      }
-    }
-    // 处理有手机前缀的情况（如中国、日本、英国等）
-    else if (config.mobilePrefixes) {
-      const prefix = randomChoice(config.mobilePrefixes);
-      const remaining = randomDigits(config.length - prefix.length);
-      phoneNumber = prefix + remaining;
-    }
-    // 默认情况
-    else {
-      phoneNumber = randomDigits(config.length);
-    }
-
-    // 质量检查：如果是日本，确保不包含 1234 或 0000
-    if (country === 'Japan') {
-      if (phoneNumber.includes('1234') || phoneNumber.includes('0000')) {
-        continue; // 重新生成
-      }
+    // 全部国家都过滤明显测试号/顺子/重复号，降低前端校验直接拒绝概率。
+    if (isLowQualityPhoneNumber(phoneNumber, protectedPrefixLength)) {
+      continue;
     }
 
     break; // 成功
@@ -955,11 +1657,29 @@ function generatePhone(country) {
  * 生成地址（使用对应国家的街道名）
  */
 function generateAddress(country) {
-  const streets = STREET_NAMES[country] || STREET_NAMES['default'];
+  const normalizedCountry = normalizeCountry(country);
+  const streets = STREET_NAMES[normalizedCountry] || STREET_NAMES['default'];
   const streetNum = Math.floor(Math.random() * 9999) + 1;
   const street = randomChoice(streets);
-  const aptNum = Math.random() > 0.7 ? `, Apt ${Math.floor(Math.random() * 999) + 1}` : '';
-  return `${streetNum} ${street}${aptNum}`;
+  const unitSuffix = generateUnitSuffix(normalizedCountry);
+
+  if (normalizedCountry === 'Japan') {
+    return `${street} ${Math.floor(Math.random() * 6) + 1}-${Math.floor(Math.random() * 30) + 1}${unitSuffix}`;
+  }
+  if (normalizedCountry === 'Germany') {
+    return `${street} ${streetNum}${unitSuffix}`;
+  }
+  if (['France', 'Spain', 'Italy', 'Brazil', 'Mexico'].includes(normalizedCountry)) {
+    return `${street} ${streetNum}${unitSuffix}`;
+  }
+  if (normalizedCountry === 'Taiwan') {
+    return `No. ${streetNum}, ${street}${unitSuffix}`;
+  }
+  if (normalizedCountry === 'Hong Kong' || normalizedCountry === 'Singapore') {
+    return `${streetNum} ${street}${unitSuffix}`;
+  }
+
+  return `${streetNum} ${street}${unitSuffix}`;
 }
 
 /**
@@ -1034,17 +1754,25 @@ function generateZipCode(country) {
     const letters = 'ABCEGHJKLMNPRSTVXY';
     return zipPrefix + randomChoice(letters.split('')) + randomDigits(1) + ' ' + randomDigits(1) + randomChoice(letters.split('')) + randomDigits(1);
   } else if (country === 'United Kingdom') {
-    // 英国: 使用城市前缀
-    return zipPrefix + randomDigits(1) + ' ' + randomDigits(1) + String.fromCharCode(65 + Math.floor(Math.random() * 26)) + String.fromCharCode(65 + Math.floor(Math.random() * 26));
+    // 英国: 外码 + 内码（示例: SW1A 1AA）
+    const inwardLetters = 'ABDEFGHJLNPQRSTUWXYZ';
+    const fallbackOutward = randomChoice(['W1', 'M1', 'B1', 'LS1', 'G1', 'NE1', 'BS1', 'EH1']);
+    const outwardBase = (zipPrefix || fallbackOutward).toUpperCase();
+    const outward = /\d$/.test(outwardBase) ? outwardBase : `${outwardBase}${randomDigits(1)}`;
+    return `${outward} ${randomDigits(1)}${randomChoice(inwardLetters.split(''))}${randomChoice(inwardLetters.split(''))}`;
   } else if (country === 'Germany' || country === 'France' || country === 'Spain' || country === 'Italy') {
-    // 欧洲: 5位数字
-    return zipPrefix + randomDigits(5 - zipPrefix.length);
+    // 欧洲: 5位数字（德国等）
+    const prefix = (zipPrefix || '').replace(/\D/g, '').slice(0, 5);
+    return (prefix + randomDigits(Math.max(0, 5 - prefix.length))).slice(0, 5);
   } else if (country === 'China') {
     // 中国: 6位数字
     return zipPrefix || randomDigits(6);
   } else if (country === 'Japan') {
     // 日本: xxx-xxxx 格式
-    return zipPrefix + randomDigits(3 - zipPrefix.length) + '-' + randomDigits(4);
+    const jpPrefix = (zipPrefix || '').replace(/\D/g, '').slice(0, 3);
+    let first = (jpPrefix + randomDigits(Math.max(0, 3 - jpPrefix.length))).slice(0, 3);
+    if (first === '000') first = '100';
+    return `${first}-${randomDigits(4)}`;
   } else if (country === 'South Korea') {
     // 韩国: 5位数字
     return zipPrefix + randomDigits(5 - zipPrefix.length);
@@ -1131,17 +1859,19 @@ function generateBirthday(minAge = 18, maxAge = 55) {
  * 生成完整的用户信息
  */
 function generateAllInfo(ipData) {
-  const country = ipData.country || 'United States';
+  const country = normalizeCountry(ipData.country || 'United States');
   const ipCity = ipData.city || '';
   const ipRegion = ipData.region || '';
 
   const gender = generateGender();
-  const firstName = generateFirstName(country);
-  const lastName = generateLastName(country);
+  const namePair = generateNamePair(country, gender);
+  const firstName = namePair.firstName;
+  const lastName = namePair.lastName;
   const username = generateUsername(firstName, lastName);
 
   // 优先根据 IP 检测到的城市匹配位置，确保城市、州、邮编关联
   selectLocationByCity(country, ipCity, ipRegion);
+  const addressInfo = pickInitialAddress(country, ipCity, ipRegion);
 
   return {
     firstName,
@@ -1152,11 +1882,14 @@ function generateAllInfo(ipData) {
     email: generateEmail(username),
     password: generatePassword(),
     phone: generatePhone(country),
-    address: generateAddress(country),
-    city: generateCity(country),
-    state: generateState(country),
-    zipCode: generateZipCode(country),
-    country
+    address: addressInfo.address,
+    city: addressInfo.city,
+    state: addressInfo.state,
+    zipCode: addressInfo.zipCode,
+    country,
+    addressSource: addressInfo.source,
+    addressConfidence: addressInfo.confidence,
+    addressLastUpdatedAt: new Date().toISOString()
   };
 }
 
@@ -1164,11 +1897,11 @@ function generateAllInfo(ipData) {
  * 重新生成单个字段
  */
 function regenerateField(fieldName, currentData, ipData) {
-  const country = ipData.country || 'United States';
+  const country = normalizeCountry(currentData.country || ipData.country || 'United States');
 
   switch (fieldName) {
     case 'firstName':
-      return generateFirstName(country);
+      return generateFirstName(country, currentData.gender);
     case 'lastName':
       return generateLastName(country);
     case 'gender':
@@ -1234,7 +1967,7 @@ if (typeof window !== 'undefined') {
 
   // 扩展信息生成函数（支持自定义设置）
   function generateAllInfoWithSettings(ipData, settings = {}) {
-    const country = ipData.country || 'United States';
+    const country = normalizeCountry(ipData.country || 'United States');
     const ipCity = ipData.city || '';
     const ipRegion = ipData.region || '';
     const gender = generateGender();
@@ -1267,10 +2000,12 @@ if (typeof window !== 'undefined') {
       };
     }
 
-    const firstName = generateFirstName(country);
-    const lastName = generateLastName(country);
+    const namePair = generateNamePair(country, gender);
+    const firstName = namePair.firstName;
+    const lastName = namePair.lastName;
     const username = generateUsername(firstName, lastName);
     selectLocationByCity(country, ipCity, ipRegion);
+    const addressInfo = pickInitialAddress(country, ipCity, ipRegion);
     return {
       firstName: firstName, lastName: lastName, gender: gender,
       birthday: generateBirthday(settings.minAge || 18, settings.maxAge || 55),
@@ -1278,11 +2013,14 @@ if (typeof window !== 'undefined') {
       email: generateEmail(username),
       password: generatePasswordWithSettings(settings),
       phone: generatePhone(country),
-      address: generateAddress(country),
-      city: generateCity(country),
-      state: generateState(country),
-      zipCode: generateZipCode(country),
-      country: country
+      address: addressInfo.address,
+      city: addressInfo.city,
+      state: addressInfo.state,
+      zipCode: addressInfo.zipCode,
+      country: country,
+      addressSource: addressInfo.source,
+      addressConfidence: addressInfo.confidence,
+      addressLastUpdatedAt: new Date().toISOString()
     };
   }
 
@@ -1313,36 +2051,86 @@ if (typeof window !== 'undefined') {
     fetchRealAddressFromApi: fetchRealAddressFromApi,
     fetchAddressFromOSM: fetchAddressFromOSM,
     fetchRealAddressSmart: fetchRealAddressSmart,
+    pickLocalVerifiedAddress: pickLocalVerifiedAddress,
+    buildSyntheticAddress: buildSyntheticAddress,
+    pickInitialAddress: pickInitialAddress,
+    getAddressPoolSummary: function () {
+      const summary = {};
+      for (const country of Object.keys(LOCAL_VERIFIED_ADDRESS_POOL)) {
+        summary[country] = LOCAL_VERIFIED_ADDRESS_POOL[country].length;
+      }
+      return summary;
+    },
+    getAddressPoolMeta: function () {
+      return { ...LOCAL_VERIFIED_ADDRESS_POOL_RUNTIME_META };
+    },
+    getAddressPoolStats: function (country) {
+      const normalizedCountry = normalizeCountryIfKnown(country || '');
+      if (!normalizedCountry) return null;
+      const stats = LOCAL_VERIFIED_ADDRESS_POOL_RUNTIME_META.countryStats?.[normalizedCountry];
+      return stats ? { ...stats } : null;
+    },
     CITY_COORDINATES: CITY_COORDINATES,
     /**
-     * 异步生成地址（智能切换：Geoapify → OSM → 本地生成）
+     * 异步生成地址（本地真实池优先 -> API补充 -> 合成兜底）
      */
-    generateAddressAsync: async function (country, cityName) {
+    generateAddressAsync: async function (country, cityName, options = {}) {
+      const normalizedCountry = normalizeCountry(country || 'United States');
+
+      // 1) 本地真实池优先：稳定、快、可离线
+      const localVerified = pickLocalVerifiedAddress(normalizedCountry, cityName, {
+        requireCityMatch: options.requireCityMatch === true
+      });
+      if (localVerified && localVerified.address) {
+        return localVerified;
+      }
+
+      const requestedCity = String(cityName || '').trim();
+      const locationContext = options.locationContext || {};
+
+      // 2) API 补充（有坐标才调用）
       // 尝试获取城市坐标
       const coords = CITY_COORDINATES[cityName] || CITY_COORDINATES[currentLocation?.city];
 
-      if (coords) {
+      if (coords && options.allowApi !== false) {
         try {
           // 使用智能切换函数（优先 Geoapify，备用 OSM）
           const realAddr = await fetchRealAddressSmart(coords.lat, coords.lon);
           if (realAddr && realAddr.address) {
+            const returnedCity = realAddr.city || requestedCity || generateCity(normalizedCountry);
+            if (options.requireCityMatch === true && requestedCity && !isSameAddressCity(returnedCity, requestedCity)) {
+              console.log('[GeoFill] 地址 API 返回城市不匹配，使用同城兜底地址:', returnedCity, requestedCity);
+              return buildSyntheticAddress(normalizedCountry, {
+                city: requestedCity,
+                state: locationContext.state,
+                zipCode: locationContext.zipCode
+              });
+            }
             console.log('[GeoFill] 获取真实地址成功:', realAddr.address, '来源:', realAddr.source);
-            return realAddr;
+            return {
+              address: realAddr.address,
+              city: returnedCity,
+              state: realAddr.state || generateState(normalizedCountry),
+              zipCode: realAddr.zipCode || generateZipCode(normalizedCountry),
+              country: normalizeCountry(realAddr.country || normalizedCountry),
+              source: realAddr.source || 'openstreetmap',
+              confidence: realAddr.confidence || (realAddr.source === 'geoapify' ? 'high' : 'medium')
+            };
           }
         } catch (e) {
-          console.log('[GeoFill] 地址 API 失败，使用本地生成');
+          console.log('[GeoFill] 地址 API 失败，降级到本地合成地址');
         }
       }
 
-      // 降级到默认逻辑
-      return {
-        address: generateAddress(country),
-        city: generateCity(country),
-        state: generateState(country),
-        zipCode: generateZipCode(country),
-        country: country,
-        source: 'local'
-      };
+      // 3) 最后兜底：本地合成
+      if (options.requireCityMatch === true && requestedCity) {
+        return buildSyntheticAddress(normalizedCountry, {
+          city: requestedCity,
+          state: locationContext.state,
+          zipCode: locationContext.zipCode
+        });
+      }
+      return buildSyntheticAddress(normalizedCountry);
     }
   };
 }

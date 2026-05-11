@@ -1,0 +1,62 @@
+[
+  {
+    "address": "Via del Corso 120",
+    "city": "Rome",
+    "state": "Lazio",
+    "zipCode": "00186"
+  },
+  {
+    "address": "Via Nazionale 45",
+    "city": "Rome",
+    "state": "Lazio",
+    "zipCode": "00184"
+  },
+  {
+    "address": "Via Torino 61",
+    "city": "Milan",
+    "state": "Lombardy",
+    "zipCode": "20123"
+  },
+  {
+    "address": "Corso Buenos Aires 15",
+    "city": "Milan",
+    "state": "Lombardy",
+    "zipCode": "20124"
+  },
+  {
+    "address": "Via Toledo 220",
+    "city": "Naples",
+    "state": "Campania",
+    "zipCode": "80134"
+  },
+  {
+    "address": "Via Roma 90",
+    "city": "Turin",
+    "state": "Piedmont",
+    "zipCode": "10121"
+  },
+  {
+    "address": "Via Maqueda 75",
+    "city": "Palermo",
+    "state": "Sicily",
+    "zipCode": "90133"
+  },
+  {
+    "address": "Via XX Settembre 40",
+    "city": "Genoa",
+    "state": "Liguria",
+    "zipCode": "16121"
+  },
+  {
+    "address": "Via Rizzoli 12",
+    "city": "Bologna",
+    "state": "Emilia-Romagna",
+    "zipCode": "40125"
+  },
+  {
+    "address": "Via de Tornabuoni 18",
+    "city": "Florence",
+    "state": "Tuscany",
+    "zipCode": "50123"
+  }
+]

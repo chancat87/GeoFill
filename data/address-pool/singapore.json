@@ -1,0 +1,62 @@
+[
+  {
+    "address": "1 Raffles Place",
+    "city": "Singapore",
+    "state": "Central Region",
+    "zipCode": "048616"
+  },
+  {
+    "address": "2 Orchard Turn",
+    "city": "Singapore",
+    "state": "Central Region",
+    "zipCode": "238801"
+  },
+  {
+    "address": "10 Bayfront Avenue",
+    "city": "Singapore",
+    "state": "Central Region",
+    "zipCode": "018956"
+  },
+  {
+    "address": "50 Jurong Gateway Road",
+    "city": "Jurong East",
+    "state": "West Region",
+    "zipCode": "608549"
+  },
+  {
+    "address": "21 Tampines Avenue 1",
+    "city": "Tampines",
+    "state": "East Region",
+    "zipCode": "529757"
+  },
+  {
+    "address": "1 Woodlands Square",
+    "city": "Woodlands",
+    "state": "North Region",
+    "zipCode": "738099"
+  },
+  {
+    "address": "311 New Upper Changi Road",
+    "city": "Bedok",
+    "state": "East Region",
+    "zipCode": "467360"
+  },
+  {
+    "address": "53 Ang Mo Kio Avenue 3",
+    "city": "Ang Mo Kio",
+    "state": "North-East Region",
+    "zipCode": "569933"
+  },
+  {
+    "address": "200 Victoria Street",
+    "city": "Singapore",
+    "state": "Central Region",
+    "zipCode": "188021"
+  },
+  {
+    "address": "30 Bencoolen Street",
+    "city": "Singapore",
+    "state": "Central Region",
+    "zipCode": "189621"
+  }
+]

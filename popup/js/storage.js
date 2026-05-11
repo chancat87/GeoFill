@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 存储相关功能
  */
 
@@ -66,6 +66,17 @@ async function loadDataFromStorage() {
             log.info('缓存版本不匹配，清除旧缓存');
             await chrome.storage.local.remove(STORAGE_KEY);
             return null;
+        }
+        if (cached?.currentData) {
+            if (cached.currentData.addressSource === undefined) {
+                cached.currentData.addressSource = '';
+            }
+            if (cached.currentData.addressConfidence === undefined) {
+                cached.currentData.addressConfidence = '';
+            }
+            if (cached.currentData.addressLastUpdatedAt === undefined) {
+                cached.currentData.addressLastUpdatedAt = '';
+            }
         }
         return cached || null;
     } catch (e) {
@@ -157,6 +168,24 @@ async function loadSettings() {
 /**
  * 加载 Geoapify API Key (独立存储)
  */
+async function loadAddressApiToggle() {
+    try {
+        const result = await chrome.storage.local.get(ADDRESS_API_ENABLED_KEY);
+        if (elements.useAddressApiToggle) {
+            elements.useAddressApiToggle.checked = result[ADDRESS_API_ENABLED_KEY] === true;
+        }
+    } catch (e) {
+        log.info('Load address API toggle failed:', e);
+    }
+}
+
+async function saveAddressApiToggle(enabled) {
+    try {
+        await chrome.storage.local.set({ [ADDRESS_API_ENABLED_KEY]: Boolean(enabled) });
+    } catch (e) {
+        log.info('Save address API toggle failed:', e);
+    }
+}
 async function loadGeoapifyKey() {
     try {
         const result = await chrome.storage.local.get(GEOAPIFY_KEY);
@@ -192,4 +221,5 @@ async function saveGeoapifyKey() {
         log.info('保存 Geoapify API Key 失败:', e);
     }
 }
+
 

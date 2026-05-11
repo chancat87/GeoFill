@@ -1,0 +1,62 @@
+[
+  {
+    "address": "1 Chang an Avenue",
+    "city": "Beijing",
+    "state": "Beijing",
+    "zipCode": "100006"
+  },
+  {
+    "address": "99 Wangfujing Street",
+    "city": "Beijing",
+    "state": "Beijing",
+    "zipCode": "100005"
+  },
+  {
+    "address": "100 Nanjing Road East",
+    "city": "Shanghai",
+    "state": "Shanghai",
+    "zipCode": "200001"
+  },
+  {
+    "address": "88 Huaihai Road",
+    "city": "Shanghai",
+    "state": "Shanghai",
+    "zipCode": "200020"
+  },
+  {
+    "address": "200 Tianhe Road",
+    "city": "Guangzhou",
+    "state": "Guangdong",
+    "zipCode": "510620"
+  },
+  {
+    "address": "1 Shennan Avenue",
+    "city": "Shenzhen",
+    "state": "Guangdong",
+    "zipCode": "518000"
+  },
+  {
+    "address": "168 West Lake Avenue",
+    "city": "Hangzhou",
+    "state": "Zhejiang",
+    "zipCode": "310007"
+  },
+  {
+    "address": "300 Jiefang Road",
+    "city": "Chengdu",
+    "state": "Sichuan",
+    "zipCode": "610015"
+  },
+  {
+    "address": "66 Zhongshan Road",
+    "city": "Nanjing",
+    "state": "Jiangsu",
+    "zipCode": "210005"
+  },
+  {
+    "address": "88 Renmin Road",
+    "city": "Wuhan",
+    "state": "Hubei",
+    "zipCode": "430014"
+  }
+]

@@ -1,18 +1,27 @@
-/**
- * API 与通信模块
+﻿/**
+ * API and location module.
  */
 
-/**
- * 获取 IP 信息
- */
-async function fetchIPInfo() {
-    log.info('开始获取 IP 信息...');
-
-    if (elements.ipInfo) {
-        elements.ipInfo.innerHTML = '<span class="loading">获取位置中...</span>';
+function setIpInfoText(text, isLoading = false) {
+    if (!elements.ipInfo) return;
+    if (isLoading) {
+        elements.ipInfo.classList.add('loading');
+        elements.ipInfo.textContent = text;
+        return;
     }
 
-    // 保存锁定字段的当前值
+    elements.ipInfo.classList.remove('loading');
+    elements.ipInfo.textContent = `📍 ${text}`;
+}
+
+/**
+ * Fetch IP/location info.
+ */
+async function fetchIPInfo() {
+    log.info('Start fetching IP info...');
+
+    setIpInfoText('获取位置中...', true);
+
     const lockedValues = {};
     lockedFields.forEach(field => {
         lockedValues[field] = currentData[field];
@@ -29,7 +38,7 @@ async function fetchIPInfo() {
         const response = await fetch('https://ipapi.co/json/', { signal: controller.signal });
         clearTimeout(timeoutId);
         const result = await response.json();
-        log.info('ipapi.co 响应:', result);
+        log.info('ipapi.co response:', result);
         if (result.country_name) {
             country = result.country_name;
             city = result.city || 'Unknown';
@@ -44,83 +53,62 @@ async function fetchIPInfo() {
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 5000);
-            const response = await fetch('http://ip-api.com/json/', { signal: controller.signal });
+            const response = await fetch('https://ipwho.is/', { signal: controller.signal });
             clearTimeout(timeoutId);
             const result = await response.json();
-            log.info('ip-api.com 响应:', result);
-            if (result.status === 'success') {
+            log.info('ipwho.is response:', result);
+            if (result.success !== false && result.country) {
                 country = result.country;
                 city = result.city || 'Unknown';
-                region = result.regionName || '';
+                region = result.region || '';
                 success = true;
             }
         } catch (e) {
-            log.info('ip-api.com failed:', e.message);
+            log.info('ipwho.is failed:', e.message);
         }
     }
 
     if (!window.generators) {
-        log.error('generators 未加载');
-        if (elements.ipInfo) {
-            elements.ipInfo.innerHTML = `<span class="location">📍 ${country} (默认)</span>`;
-        }
+        log.error('generators not loaded');
+        setIpInfoText(`${country} (默认)`);
         return;
     }
 
     const normalizedCountry = window.generators.normalizeCountry(country);
-    log.info('标准化国家:', normalizedCountry);
+    log.info('Normalized country:', normalizedCountry);
 
     ipData = {
         country: normalizedCountry,
-        city: city,
-        region: region
+        city,
+        region
     };
 
-    if (elements.ipInfo) {
-        if (success) {
-            if (city === normalizedCountry || city === 'Singapore' || city === 'Hong Kong') {
-                elements.ipInfo.innerHTML = `<span class="location">📍 ${normalizedCountry}</span>`;
-            } else {
-                elements.ipInfo.innerHTML = `<span class="location">📍 ${city}, ${normalizedCountry}</span>`;
-            }
+    if (success) {
+        if (city === normalizedCountry || city === 'Singapore' || city === 'Hong Kong') {
+            setIpInfoText(normalizedCountry);
         } else {
-            elements.ipInfo.innerHTML = `<span class="location">📍 ${normalizedCountry} (默认)</span>`;
+            setIpInfoText(`${city}, ${normalizedCountry}`);
         }
+    } else {
+        setIpInfoText(`${normalizedCountry} (默认)`);
     }
 
     currentData = window.generators.generateAllInfoWithSettings(ipData, userSettings);
-    log.info('生成数据:', currentData);
+    log.info('Generated data:', currentData);
 
-    // 尝试获取真实地址（智能切换：Geoapify → OSM → 本地）
-    const addressApiEnabled = document.getElementById('useAddressApiToggle')?.checked !== false;
-    if (addressApiEnabled && window.generators.generateAddressAsync) {
+    if (await shouldUseAddressApi({ allowApi: true }) && window.generators.generateAddressAsync) {
         try {
-            showToast('正在获取真实地址...');
-            const realAddress = await window.generators.generateAddressAsync(
-                currentData.country,
-                currentData.city
-            );
-            if (realAddress && realAddress.address) {
-                // 检查锁定状态后再更新
-                if (!lockedFields.has('address')) {
-                    currentData.address = realAddress.address;
-                }
-                if (realAddress.state && !lockedFields.has('state')) {
-                    currentData.state = realAddress.state;
-                }
-                if (realAddress.zipCode && !lockedFields.has('zipCode')) {
-                    currentData.zipCode = realAddress.zipCode;
-                }
-                const sourceText = realAddress.source === 'geoapify' ? 'Geoapify' :
-                    realAddress.source === 'openstreetmap' ? 'OSM' : '本地';
-                showToast(`已获取真实地址 (${sourceText})`);
+            const realAddress = await generateAddressForCurrentContext(lockedValues, {
+                allowApi: true
+            });
+            if (applyGeneratedAddress(realAddress)) {
+                showAddressUpdatedToast(realAddress);
             }
         } catch (e) {
-            log.info('地址 API 调用失败:', e);
+            log.info('Address API failed:', e);
         }
     }
 
-    // 恢复锁定字段的值
     lockedFields.forEach(field => {
         if (lockedValues[field] !== undefined) {
             currentData[field] = lockedValues[field];

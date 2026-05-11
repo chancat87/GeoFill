@@ -1,10 +1,163 @@
 /**
- * AI 相关逻辑模块
+ * AI-related logic.
  */
 
-/**
- * 使用 AI 生成数据
- */
+const AI_PROFILE_ALLOWED_FIELDS = new Set(FIELD_NAMES);
+const AI_GENDER_ALLOWED = new Set(['male', 'female']);
+
+function safeString(value, maxLen = 120) {
+    if (value === null || value === undefined) return '';
+    return String(value).trim().slice(0, maxLen);
+}
+
+function sanitizeAiProfile(rawProfile, fallbackCountry) {
+    if (!rawProfile || typeof rawProfile !== 'object' || Array.isArray(rawProfile)) {
+        return {};
+    }
+
+    const sanitized = {};
+
+    for (const [key, value] of Object.entries(rawProfile)) {
+        if (!AI_PROFILE_ALLOWED_FIELDS.has(key)) continue;
+        if (typeof value !== 'string' && typeof value !== 'number') continue;
+
+        const text = safeString(value, 160);
+        if (!text) continue;
+
+        switch (key) {
+            case 'gender': {
+                const gender = text.toLowerCase();
+                if (AI_GENDER_ALLOWED.has(gender)) {
+                    sanitized.gender = gender;
+                }
+                break;
+            }
+            case 'birthday': {
+                const normalized = text.replace(/\//g, '-');
+                if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+                    sanitized.birthday = normalized;
+                }
+                break;
+            }
+            case 'email': {
+                const email = text.replace(/\s+/g, '').toLowerCase();
+                if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                    sanitized.email = email.slice(0, 120);
+                }
+                break;
+            }
+            case 'country': {
+                if (window.generators?.normalizeCountry) {
+                    sanitized.country = window.generators.normalizeCountry(text || fallbackCountry || 'United States');
+                } else {
+                    sanitized.country = text;
+                }
+                break;
+            }
+            case 'username': {
+                sanitized.username = text
+                    .replace(/\s+/g, '')
+                    .replace(/[^\w.-]/g, '')
+                    .slice(0, 28);
+                break;
+            }
+            case 'zipCode': {
+                sanitized.zipCode = text.replace(/[^\dA-Za-z -]/g, '').slice(0, 16);
+                break;
+            }
+            case 'phone': {
+                sanitized.phone = text.replace(/[^\d+\-() ]/g, '').slice(0, 24);
+                break;
+            }
+            case 'password': {
+                sanitized.password = text.replace(/\s+/g, '').slice(0, 64);
+                break;
+            }
+            default: {
+                sanitized[key] = text;
+                break;
+            }
+        }
+    }
+
+    return sanitized;
+}
+
+function parseAiJsonContent(content) {
+    const raw = String(content || '{}');
+    let jsonStr = raw.replace(/```json\s*|\s*```/g, '').trim();
+    const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+    if (jsonMatch) jsonStr = jsonMatch[0];
+    return JSON.parse(jsonStr);
+}
+
+function normalizeAgeSettings(minAge, maxAge) {
+    let min = Number.parseInt(minAge, 10);
+    let max = Number.parseInt(maxAge, 10);
+
+    if (!Number.isFinite(min)) min = 18;
+    if (!Number.isFinite(max)) max = 55;
+
+    min = Math.min(Math.max(min, 1), 100);
+    max = Math.min(Math.max(max, 1), 100);
+
+    if (min > max) {
+        const t = min;
+        min = max;
+        max = t;
+    }
+
+    return { min, max };
+}
+
+function applyStrongFallbacksForAiProfile(profile, country) {
+    const merged = { ...profile };
+    const age = normalizeAgeSettings(userSettings.minAge, userSettings.maxAge);
+
+    if (!merged.gender || !AI_GENDER_ALLOWED.has(merged.gender)) {
+        merged.gender = window.generators?.generateGender ? window.generators.generateGender() : 'male';
+    }
+
+    if ((!merged.firstName || !merged.lastName) && window.generators) {
+        if (!merged.firstName && window.generators.generateFirstName) {
+            merged.firstName = window.generators.generateFirstName(country, merged.gender);
+        }
+        if (!merged.lastName && window.generators.generateLastName) {
+            merged.lastName = window.generators.generateLastName(country);
+        }
+    }
+
+    if (!merged.birthday && window.generators?.generateBirthday) {
+        merged.birthday = window.generators.generateBirthday(age.min, age.max);
+    }
+
+    if ((!merged.username || merged.username.length < 3) && window.generators?.generateUsername) {
+        merged.username = window.generators.generateUsername(merged.firstName || 'user', merged.lastName || '');
+    }
+
+    if (!merged.address && window.generators?.generateAddress) {
+        merged.address = window.generators.generateAddress(country);
+    }
+
+    if (!merged.city && window.generators?.generateCity) {
+        merged.city = window.generators.generateCity(country);
+    }
+
+    if (!merged.state && window.generators?.generateState) {
+        merged.state = window.generators.generateState(country);
+    }
+
+    if (!merged.zipCode && window.generators?.generateZipCode) {
+        merged.zipCode = window.generators.generateZipCode(country);
+    }
+
+    if (!merged.country) {
+        merged.country = country;
+    }
+
+    return merged;
+}
+
 async function generateWithAI() {
     const btn = elements.regenerateAll;
     const originalText = btn.textContent;
@@ -14,7 +167,6 @@ async function generateWithAI() {
     try {
         const country = ipData.country || 'United States';
 
-        // 1. 收集锁定字段，告知 AI
         const lockedValues = {};
         lockedFields.forEach(field => {
             lockedValues[field] = currentData[field];
@@ -33,21 +185,23 @@ async function generateWithAI() {
         if (country === 'Japan') {
             prompt += `\n\nIMPORTANT for Japan:
             - ZipCode: "NNN-NNNN" (e.g. 100-0001)
-            - Phone: Generate a **RANDOM** mobile number "090-XXXX-XXXX" (or 080/070). **DO NOT** use "1234" or "0000".
+            - Phone: Generate a RANDOM mobile number "090-XXXX-XXXX" (or 080/070). DO NOT use "1234" or "0000".
             - Name: Kanji for First/Last name, and Katakana for reading if applicable (but return standard keys).`;
         }
 
-        prompt += ` Return ONLY a valid JSON object with the following keys: firstName, lastName, gender (male/female), birthday (YYYY-MM-DD), username, email, password, phone, address, city, state, zipCode. Ensure the data is culturally appropriate for the country.`;
+        prompt += ' Return ONLY a valid JSON object with keys: firstName, lastName, gender (male/female), birthday (YYYY-MM-DD), username, email, password, phone, address, city, state, zipCode.';
 
-        // 构建 API URL
         const apiUrl = normalizeApiUrl(userSettings.openaiBaseUrl);
-        log.info(' AI Request URL:', apiUrl);
+        const granted = await ensureHostPermission(apiUrl);
+        if (!granted) {
+            throw new Error('未授予 AI 接口站点权限，无法请求。');
+        }
 
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${userSettings.openaiKey}`
+                Authorization: `Bearer ${userSettings.openaiKey}`
             },
             body: JSON.stringify({
                 model: userSettings.openaiModel,
@@ -62,53 +216,39 @@ async function generateWithAI() {
         const contentType = response.headers.get('content-type');
         if (!response.ok) {
             const text = await response.text();
-            log.error('API Error Response:', text);
             throw new Error(`API Error (${response.status}): ${text.slice(0, 100)}...`);
         }
+
         if (!contentType || !contentType.includes('application/json')) {
             const text = await response.text();
-            log.error('API Invalid Content-Type:', contentType, text);
-            throw new Error(`API 返回了非 JSON 数据 (可能是 HTML)。请检查 API 地址是否正确。预览: ${text.slice(0, 50)}...`);
+            throw new Error(`API 返回了非 JSON 数据。预览: ${text.slice(0, 80)}...`);
         }
 
         const data = await response.json();
-        const content = data.choices[0].message.content;
+        const content = data.choices?.[0]?.message?.content || '{}';
 
-        // 尝试解析 JSON
-        let jsonStr = content.replace(/```json\n?|\n?```/g, '').trim();
-        const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-            jsonStr = jsonMatch[0];
-        }
+        let profile = parseAiJsonContent(content);
+        profile = sanitizeAiProfile(profile, country);
+        profile = applyStrongFallbacksForAiProfile(profile, country);
 
-        const profile = JSON.parse(jsonStr);
-
-        // 更新数据
         currentData = { ...currentData, ...profile };
 
-        // 2. 强制应用本地规则 (如果未锁定)
-
-        // 密码：使用本地生成器以符合长度/复杂度规则
-        if (!lockedFields.has('password') && window.generators && window.generators.generatePasswordWithSettings) {
+        if (!lockedFields.has('password') && window.generators?.generatePasswordWithSettings) {
             currentData.password = window.generators.generatePasswordWithSettings(userSettings);
         }
 
-        // 电话：使用本地生成器以保证随机性和格式正确 (AI 容易生成 1234 等假号)
-        if (!lockedFields.has('phone') && window.generators && window.generators.generatePhone) {
+        if (!lockedFields.has('phone') && window.generators?.generatePhone) {
             currentData.phone = window.generators.generatePhone(country);
         }
 
-        // 邮箱：如果用户指定了后缀，强制应用
         if (!lockedFields.has('email')) {
-            const domainType = elements.emailDomainType.value;
-            if (domainType !== 'custom' && domainType !== 'temp') {
-                // 使用 AI 生成的用户名 + 指定后缀
+            const domainType = elements.emailDomainType?.value;
+            if (domainType && domainType !== 'custom' && domainType !== 'temp') {
                 const username = currentData.username || 'user';
                 currentData.email = `${username}@${domainType}`;
             }
         }
 
-        // 3. 再次恢复锁定字段 (双重保险)
         lockedFields.forEach(field => {
             if (lockedValues[field] !== undefined) {
                 currentData[field] = lockedValues[field];
@@ -118,9 +258,8 @@ async function generateWithAI() {
         updateUI();
         saveDataToStorage();
         showToast('AI 生成成功');
-
     } catch (e) {
-        log.error('AI Generation failed:', e);
+        log.error('AI generation failed:', e);
         showToast('AI 生成失败: ' + e.message);
     } finally {
         btn.textContent = originalText;
@@ -128,29 +267,15 @@ async function generateWithAI() {
     }
 }
 
-/**
- * 构建标准化的 API URL
- */
 function normalizeApiUrl(baseUrl) {
-    let url = baseUrl.trim();
+    let url = (baseUrl || '').trim();
     if (url.endsWith('/')) url = url.slice(0, -1);
 
-    if (url.endsWith('/chat/completions')) {
-        return url;
-    }
-
-    if (url.endsWith('/v1')) {
-        return url + '/chat/completions';
-    }
-
-    // 如果既没有 v1 也没有 chat/completions，尝试添加 /v1/chat/completions
-    // 这是一个猜测，但能覆盖大多数漏写 /v1 的情况
+    if (url.endsWith('/chat/completions')) return url;
+    if (url.endsWith('/v1')) return url + '/chat/completions';
     return url + '/v1/chat/completions';
 }
 
-/**
- * 测试 AI 连接
- */
 async function testAIConnection() {
     const btn = elements.testAI;
     const originalText = btn.textContent;
@@ -167,19 +292,20 @@ async function testAIConnection() {
         }
 
         const apiUrl = normalizeApiUrl(baseUrl);
-        log.info(' Test API URL:', apiUrl);
+        const granted = await ensureHostPermission(apiUrl);
+        if (!granted) {
+            throw new Error('未授予 AI 接口站点权限，无法请求。');
+        }
 
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
+                Authorization: `Bearer ${apiKey}`
             },
             body: JSON.stringify({
-                model: model,
-                messages: [
-                    { role: 'user', content: 'Hi' }
-                ],
+                model,
+                messages: [{ role: 'user', content: 'Hi' }],
                 max_tokens: 5
             })
         });
@@ -187,21 +313,22 @@ async function testAIConnection() {
         const contentType = response.headers.get('content-type');
         if (!response.ok) {
             const text = await response.text();
-            throw new Error(`HTTP ${response.status}: ${text.slice(0, 100)}`);
+            throw new Error(`HTTP ${response.status}: ${text.slice(0, 120)}`);
         }
 
         if (!contentType || !contentType.includes('application/json')) {
             const text = await response.text();
-            throw new Error(`返回了非 JSON 数据 (HTML?)。请检查 API 地址。预览: ${text.slice(0, 50)}`);
+            throw new Error(`返回了非 JSON 数据。预览: ${text.slice(0, 80)}`);
         }
 
-        await response.json(); // 尝试解析
+        await response.json();
         showToast('✅ 连接成功');
     } catch (e) {
-        log.error('AI Test Failed:', e);
+        log.error('AI test failed:', e);
         showToast('❌ 连接失败: ' + e.message);
     } finally {
         btn.textContent = originalText;
         btn.disabled = false;
     }
 }
+

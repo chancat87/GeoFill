@@ -1,0 +1,62 @@
+[
+  {
+    "address": "Unter den Linden 10",
+    "city": "Berlin",
+    "state": "Berlin",
+    "zipCode": "10117"
+  },
+  {
+    "address": "Friedrichstrasse 100",
+    "city": "Berlin",
+    "state": "Berlin",
+    "zipCode": "10117"
+  },
+  {
+    "address": "Mönckebergstrasse 7",
+    "city": "Hamburg",
+    "state": "Hamburg",
+    "zipCode": "20095"
+  },
+  {
+    "address": "Kaufingerstrasse 15",
+    "city": "Munich",
+    "state": "Bavaria",
+    "zipCode": "80331"
+  },
+  {
+    "address": "Schildergasse 45",
+    "city": "Cologne",
+    "state": "North Rhine-Westphalia",
+    "zipCode": "50667"
+  },
+  {
+    "address": "Zeil 60",
+    "city": "Frankfurt",
+    "state": "Hesse",
+    "zipCode": "60313"
+  },
+  {
+    "address": "Königstrasse 28",
+    "city": "Stuttgart",
+    "state": "Baden-Württemberg",
+    "zipCode": "70173"
+  },
+  {
+    "address": "Königsallee 30",
+    "city": "Düsseldorf",
+    "state": "North Rhine-Westphalia",
+    "zipCode": "40212"
+  },
+  {
+    "address": "Prager Strasse 12",
+    "city": "Dresden",
+    "state": "Saxony",
+    "zipCode": "01069"
+  },
+  {
+    "address": "Petersstrasse 20",
+    "city": "Leipzig",
+    "state": "Saxony",
+    "zipCode": "04109"
+  }
+]

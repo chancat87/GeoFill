@@ -140,6 +140,7 @@
         <label for="address">地址</label>
         <div class="input-wrapper">
           <input type="text" id="address" placeholder="Address">
+          <span class="address-quality-badge" id="addressQualityBadge" title="地址来源与置信度">未校验</span>
           <button class="lock-btn" data-field="address" title="锁定/解锁">🔓</button>
           <button class="copy-btn" data-field="address" title="复制">📋</button>
           <button class="refresh-btn" data-field="address" title="重新生成">🔄</button>
@@ -208,7 +209,7 @@
       <button class="btn btn-icon" id="copyAll" title="复制全部">📋</button>
       <!-- 地址 API 开关 -->
       <label class="ai-toggle" id="addressApiToggleWrapper" title="切换地址 API（获取真实地址）">
-        <input type="checkbox" id="useAddressApiToggle" checked>
+        <input type="checkbox" id="useAddressApiToggle">
         <span class="ai-toggle-label">🗺️</span>
       </label>
       <!-- AI 模式开关 -->
@@ -219,6 +220,17 @@
       <button class="btn btn-secondary" id="regenerateAll">🔄 重新生成</button>
       <button class="btn btn-primary" id="fillForm">✍️ 填写表单</button>
     </footer>
+
+    <section class="fill-report" id="fillReport" hidden>
+      <div class="fill-report-header">
+        <div>
+          <div class="fill-report-title" id="fillReportTitle">填写报告</div>
+          <div class="fill-report-summary" id="fillReportSummary"></div>
+        </div>
+        <button class="fill-report-close" id="fillReportDismiss" type="button" title="关闭报告">×</button>
+      </div>
+      <div class="fill-report-list" id="fillReportList"></div>
+    </section>
   </div>
 
   <!-- 设置模态框 -->
@@ -347,6 +359,7 @@
   <div class="toast" id="toast"></div>
 
   <!-- 核心生成器 -->
+  <script src="../scripts/address-pool.js"></script>
   <script src="../scripts/generators.js"></script>
   <script src="../scripts/japan-generators.js"></script>
 

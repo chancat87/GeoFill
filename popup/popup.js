@@ -1,22 +1,19 @@
-/**
- * Popup 主逻辑 - 初始化与协调
- * 全局变量 (currentData, ipData, lockedFields, userSettings, elements)
- * 已在 constants.js 中声明
+﻿/**
+ * Popup main entry.
  */
 
-/**
- * 初始化
- */
 document.addEventListener('DOMContentLoaded', async () => {
-    log.info(' 开始初始化...');
+    log.info('Start initializing...');
 
-    // 缓存 DOM 元素
+    // Cache DOM elements
     elements.ipInfo = document.getElementById('ipInfo');
     elements.ipRefresh = document.getElementById('ipRefresh');
     elements.regenerateAll = document.getElementById('regenerateAll');
     elements.fillForm = document.getElementById('fillForm');
     elements.useAIToggle = document.getElementById('useAIToggle');
     elements.aiToggleWrapper = document.getElementById('aiToggleWrapper');
+    elements.useAddressApiToggle = document.getElementById('useAddressApiToggle');
+    elements.addressApiToggleWrapper = document.getElementById('addressApiToggleWrapper');
     elements.themeToggle = document.getElementById('themeToggle');
     elements.toast = document.getElementById('toast');
 
@@ -57,13 +54,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     elements.historyList = document.getElementById('historyList');
     elements.clearHistory = document.getElementById('clearHistory');
     elements.geoapifyKey = document.getElementById('geoapifyKey');
+    elements.addressQualityBadge = document.getElementById('addressQualityBadge');
+    elements.fillReport = document.getElementById('fillReport');
+    elements.fillReportTitle = document.getElementById('fillReportTitle');
+    elements.fillReportSummary = document.getElementById('fillReportSummary');
+    elements.fillReportList = document.getElementById('fillReportList');
+    elements.fillReportDismiss = document.getElementById('fillReportDismiss');
 
-    // 加载配置
+    // Load persisted settings/state
     try { await loadTheme(); } catch (e) { log.info('loadTheme error:', e); }
     try { await loadSettings(); } catch (e) { log.info('loadSettings error:', e); }
+    try { await loadAddressApiToggle(); } catch (e) { log.info('loadAddressApiToggle error:', e); }
     try { await loadLockedFields(); } catch (e) { log.info('loadLockedFields error:', e); }
 
-    // 加载 AI 开关状态
+    // Load AI toggle state
     try {
         const result = await chrome.storage.local.get('geoFillUseAI');
         if (elements.useAIToggle && result.geoFillUseAI !== undefined) {
@@ -71,10 +75,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     } catch (e) { log.info('loadAIToggle error:', e); }
 
-    // 绑定事件
     bindEvents();
 
-    // 加载数据
     let cachedData = null;
     try {
         cachedData = await loadDataFromStorage();
@@ -83,7 +85,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (cachedData && cachedData.currentData && Object.keys(cachedData.currentData).length > 0) {
-        log.info(' 使用缓存数据');
+        log.info('Using cached data');
         currentData = cachedData.currentData;
         ipData = cachedData.ipData || {};
 
@@ -94,12 +96,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 elements.customDomain.style.display = 'block';
             }
 
-            // 如果是临时邮箱，尝试恢复会话
             if (cachedData.emailDomain === 'temp' && window.mailTM && currentData.email && currentData.password) {
                 if (elements.inboxGroup) elements.inboxGroup.style.display = 'block';
-                window.mailTM.login(currentData.email, currentData.password).then(() => {
-                    refreshInbox();
-                }).catch(e => log.info('Silent login failed:', e));
+                window.mailTM.login(currentData.email, currentData.password)
+                    .then(() => refreshInbox())
+                    .catch(e => log.info('Silent login failed:', e));
             }
         }
 
@@ -110,30 +111,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (elements.ipInfo) {
             if (ipData.city && ipData.country) {
                 if (ipData.city === ipData.country || ipData.city === 'Singapore' || ipData.city === 'Hong Kong') {
-                    elements.ipInfo.innerHTML = `<span class="location">📍 ${ipData.country}</span>`;
+                    setIpInfoText(ipData.country);
                 } else {
-                    elements.ipInfo.innerHTML = `<span class="location">📍 ${ipData.city}, ${ipData.country}</span>`;
+                    setIpInfoText(`${ipData.city}, ${ipData.country}`);
                 }
             } else if (ipData.country) {
-                elements.ipInfo.innerHTML = `<span class="location">📍 ${ipData.country}</span>`;
+                setIpInfoText(ipData.country);
             } else {
-                elements.ipInfo.innerHTML = `<span class="location">📍 已缓存数据</span>`;
+                setIpInfoText('已缓存数据');
             }
         }
 
         updateUI();
     } else {
-        log.info(' 无缓存，获取 IP 信息...');
+        log.info('No cache, fetching IP info...');
         if (window.generators) {
             window.generators.setCustomEmailDomain(elements.emailDomainType?.value || 'gmail.com');
         }
+
         try {
             await fetchIPInfo();
         } catch (e) {
-            log.error(' fetchIPInfo 失败:', e);
-            // 使用默认值
+            log.error('fetchIPInfo failed:', e);
             if (elements.ipInfo) {
-                elements.ipInfo.innerHTML = `<span class="location">📍 United States (默认)</span>`;
+                setIpInfoText('United States (默认)');
             }
             if (window.generators) {
                 ipData = { country: 'United States', city: 'New York', region: '' };
@@ -144,12 +145,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    log.info(' 初始化完成');
+    log.info('Initialization done');
 });
 
-/**
- * 从输入框更新 currentData
- */
 function updateCurrentDataFromInputs() {
     FIELD_NAMES.forEach(name => {
         if (elements.fields[name]) {
@@ -158,6 +156,5 @@ function updateCurrentDataFromInputs() {
     });
 }
 
-// 暴露函数给全局 (如果需要)
 window.loadArchive = loadArchive;
 window.deleteArchive = deleteArchive;

@@ -1,0 +1,62 @@
+[
+  {
+    "address": "10 Avenue des Champs-Elysees",
+    "city": "Paris",
+    "state": "Ile-de-France",
+    "zipCode": "75008"
+  },
+  {
+    "address": "16 Boulevard Haussmann",
+    "city": "Paris",
+    "state": "Ile-de-France",
+    "zipCode": "75009"
+  },
+  {
+    "address": "20 Rue de la Republique",
+    "city": "Lyon",
+    "state": "Auvergne-Rhone-Alpes",
+    "zipCode": "69002"
+  },
+  {
+    "address": "1 Quai du Port",
+    "city": "Marseille",
+    "state": "Provence-Alpes-Cote d Azur",
+    "zipCode": "13002"
+  },
+  {
+    "address": "12 Place de la Comedie",
+    "city": "Montpellier",
+    "state": "Occitanie",
+    "zipCode": "34000"
+  },
+  {
+    "address": "8 Rue Sainte-Catherine",
+    "city": "Bordeaux",
+    "state": "Nouvelle-Aquitaine",
+    "zipCode": "33000"
+  },
+  {
+    "address": "2 Place du Capitole",
+    "city": "Toulouse",
+    "state": "Occitanie",
+    "zipCode": "31000"
+  },
+  {
+    "address": "5 Rue Faidherbe",
+    "city": "Lille",
+    "state": "Hauts-de-France",
+    "zipCode": "59000"
+  },
+  {
+    "address": "3 Rue du Dome",
+    "city": "Strasbourg",
+    "state": "Grand Est",
+    "zipCode": "67000"
+  },
+  {
+    "address": "7 Avenue Jean Medecin",
+    "city": "Nice",
+    "state": "Provence-Alpes-Cote d Azur",
+    "zipCode": "06000"
+  }
+]

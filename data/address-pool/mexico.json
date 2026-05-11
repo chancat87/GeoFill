@@ -1,0 +1,62 @@
+[
+  {
+    "address": "Avenida Paseo de la Reforma 222",
+    "city": "Mexico City",
+    "state": "Mexico City",
+    "zipCode": "06600"
+  },
+  {
+    "address": "Calle Madero 10",
+    "city": "Mexico City",
+    "state": "Mexico City",
+    "zipCode": "06000"
+  },
+  {
+    "address": "Avenida Juarez 99",
+    "city": "Guadalajara",
+    "state": "Jalisco",
+    "zipCode": "44100"
+  },
+  {
+    "address": "Calle Morelos 120",
+    "city": "Guadalajara",
+    "state": "Jalisco",
+    "zipCode": "44160"
+  },
+  {
+    "address": "Avenida Constitucion 400",
+    "city": "Monterrey",
+    "state": "Nuevo Leon",
+    "zipCode": "64000"
+  },
+  {
+    "address": "Calle 5 de Mayo 88",
+    "city": "Puebla",
+    "state": "Puebla",
+    "zipCode": "72000"
+  },
+  {
+    "address": "Avenida Revolucion 1550",
+    "city": "Tijuana",
+    "state": "Baja California",
+    "zipCode": "22000"
+  },
+  {
+    "address": "Boulevard Kukulkan 31",
+    "city": "Cancun",
+    "state": "Quintana Roo",
+    "zipCode": "77500"
+  },
+  {
+    "address": "Avenida Universidad 300",
+    "city": "Mexico City",
+    "state": "Mexico City",
+    "zipCode": "04360"
+  },
+  {
+    "address": "Avenida Hidalgo 55",
+    "city": "Monterrey",
+    "state": "Nuevo Leon",
+    "zipCode": "64010"
+  }
+]

@@ -64,6 +64,11 @@ body {
   position: absolute;
   top: 0;
   right: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
 }
 
 .theme-toggle {
@@ -159,6 +164,55 @@ body {
   flex: 1;
   display: flex;
   gap: 4px;
+}
+
+.address-quality-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  max-width: 120px;
+  padding: 0 8px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.address-quality-badge.is-high {
+  border-color: rgba(0, 255, 136, 0.6);
+  background: rgba(0, 255, 136, 0.18);
+  color: #8dffd3;
+}
+
+body.light-theme .address-quality-badge.is-high {
+  color: #00774f;
+}
+
+.address-quality-badge.is-medium {
+  border-color: rgba(0, 217, 255, 0.6);
+  background: rgba(0, 217, 255, 0.18);
+  color: #9deeff;
+}
+
+body.light-theme .address-quality-badge.is-medium {
+  color: #006a83;
+}
+
+.address-quality-badge.is-low {
+  border-color: rgba(255, 193, 7, 0.6);
+  background: rgba(255, 193, 7, 0.18);
+  color: #ffe08a;
+}
+
+body.light-theme .address-quality-badge.is-low {
+  color: #8a5b00;
 }
 
 .input-wrapper input {
@@ -334,6 +388,102 @@ body.light-theme .btn-primary {
   transform: translateX(-50%) translateY(0);
 }
 
+/* Fill Report */
+.fill-report {
+  margin-top: 10px;
+  padding: 10px;
+  background: rgba(255, 193, 7, 0.12);
+  border: 1px solid rgba(255, 193, 7, 0.45);
+  border-radius: 10px;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.18);
+}
+
+.fill-report[hidden] {
+  display: none;
+}
+
+.fill-report.is-clean {
+  background: rgba(0, 255, 136, 0.12);
+  border-color: rgba(0, 255, 136, 0.45);
+}
+
+.fill-report-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.fill-report-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.fill-report-summary {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.fill-report-close {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  transition: all 0.2s ease;
+}
+
+.fill-report-close:hover {
+  background: rgba(255, 77, 77, 0.2);
+  border-color: #ff4d4d;
+  color: #ff6b6b;
+}
+
+.fill-report-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.fill-report-list:empty {
+  display: none;
+}
+
+.fill-report-item {
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+body.light-theme .fill-report-item {
+  background: rgba(255, 255, 255, 0.55);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+.fill-report-item-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.fill-report-item-detail {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
 /* Email Domain Selector */
 .email-domain-wrapper {
   gap: 8px;
@@ -361,7 +511,6 @@ body.light-theme .btn-primary {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-right: 6px;
 }
 
 .settings-btn:hover {
@@ -678,7 +827,6 @@ body.light-theme .btn-small {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-right: 6px;
 }
 
 .history-btn:hover {

@@ -2,6 +2,88 @@
  * UI 管理模块
  */
 
+function sourceLabel(source) {
+    switch (source) {
+        case 'local_verified':
+            return '本地真实池';
+        case 'geoapify':
+            return 'Geoapify';
+        case 'openstreetmap':
+            return 'OSM';
+        case 'synthetic':
+            return '本地合成';
+        default:
+            return '未校验';
+    }
+}
+
+function confidenceLabel(confidence) {
+    switch (confidence) {
+        case 'high':
+            return '高置信';
+        case 'medium':
+            return '中置信';
+        case 'low':
+            return '基础';
+        default:
+            return '未校验';
+    }
+}
+
+function formatAddressUpdateTime(isoString) {
+    if (!isoString) return '未记录';
+    const date = new Date(isoString);
+    if (Number.isNaN(date.getTime())) return '未记录';
+    return date.toLocaleString();
+}
+
+function getCurrentCountryPoolText(country) {
+    const stats = window.generators?.getAddressPoolStats ? window.generators.getAddressPoolStats(country) : null;
+    if (!stats) return '当前国家未记录';
+    return `${country}: ${stats.entries || 0}条/${stats.cities || 0}城`;
+}
+
+function showAddressQualityDetail() {
+    const sourceText = sourceLabel(currentData.addressSource || '');
+    const qualityText = confidenceLabel(currentData.addressConfidence || '');
+    const countryText = currentData.country || 'Unknown';
+    const updatedAt = formatAddressUpdateTime(currentData.addressLastUpdatedAt || '');
+    const poolMeta = window.generators?.getAddressPoolMeta ? window.generators.getAddressPoolMeta() : {};
+    const poolCount = poolMeta.totalEntries ? `${poolMeta.countryCount || '-'}国/${poolMeta.totalEntries}条` : '未记录';
+    const countryPoolText = getCurrentCountryPoolText(countryText);
+    showToast(`来源:${sourceText} | ${countryPoolText}`);
+
+    if (elements.addressQualityBadge) {
+        elements.addressQualityBadge.title = `来源: ${sourceText}\n置信度: ${qualityText}\n国家: ${countryText}\n当前国家地址池: ${countryPoolText}\n总地址池: ${poolCount}\n更新时间: ${updatedAt}`;
+    }
+}
+
+function updateAddressQualityBadge() {
+    const badge = elements.addressQualityBadge;
+    if (!badge) return;
+
+    const source = currentData.addressSource || '';
+    const confidence = currentData.addressConfidence || '';
+    const country = currentData.country || 'Unknown';
+    const updatedAt = formatAddressUpdateTime(currentData.addressLastUpdatedAt || '');
+    const sourceText = sourceLabel(source);
+    const qualityText = confidenceLabel(confidence);
+
+    badge.classList.remove('is-high', 'is-medium', 'is-low');
+    if (confidence === 'high') badge.classList.add('is-high');
+    if (confidence === 'medium') badge.classList.add('is-medium');
+    if (confidence === 'low') badge.classList.add('is-low');
+
+    if (!source && !confidence) {
+        badge.textContent = '未校验';
+        badge.title = `地址来源与置信度\n国家: ${country}\n当前国家地址池: ${getCurrentCountryPoolText(country)}\n更新时间: ${updatedAt}`;
+        return;
+    }
+
+    badge.textContent = `${sourceText}·${qualityText}`;
+    badge.title = `来源: ${sourceText}\n置信度: ${qualityText}\n国家: ${country}\n当前国家地址池: ${getCurrentCountryPoolText(country)}\n更新时间: ${updatedAt}`;
+}
+
 /**
  * 更新界面显示
  */
@@ -23,6 +105,7 @@ function updateUI() {
             }
         }
     });
+    updateAddressQualityBadge();
 }
 
 /**
@@ -60,46 +143,75 @@ function updateSettingsUI() {
 function renderHistoryList(history) {
     if (!elements.historyList) return;
 
+    elements.historyList.textContent = '';
+
     if (!history || history.length === 0) {
-        elements.historyList.innerHTML = '<div class="history-empty">暂无历史记录</div>';
+        const empty = document.createElement('div');
+        empty.className = 'history-empty';
+        empty.textContent = '暂无历史记录';
+        elements.historyList.appendChild(empty);
         return;
     }
 
-    elements.historyList.innerHTML = history.map(item => {
-        const data = item.data;
+    const fragment = document.createDocumentFragment();
+
+    history.forEach(item => {
+        const data = item?.data || {};
         const name = `${data.firstName || ''} ${data.lastName || ''}`.trim() || '未知';
         const email = data.email || '无邮箱';
         const time = formatHistoryTime(item.timestamp);
 
-        return `
-            <div class="history-item" data-id="${item.id}">
-                <div class="history-item-info" title="点击加载此记录">
-                    <div class="history-item-name">${name}</div>
-                    <div class="history-item-email">${email}</div>
-                </div>
-                <div class="history-item-time">${time}</div>
-                <button class="history-item-delete" data-id="${item.id}" title="删除">🗑️</button>
-            </div>
-        `;
-    }).join('');
+        const itemEl = document.createElement('div');
+        itemEl.className = 'history-item';
+        itemEl.dataset.id = String(item.id);
 
-    // 绑定点击事件
-    elements.historyList.querySelectorAll('.history-item-info').forEach(el => {
-        el.addEventListener('click', (e) => {
-            const item = e.currentTarget.closest('.history-item');
-            const id = parseInt(item.dataset.id);
-            loadHistoryItem(id);
+        const infoEl = document.createElement('div');
+        infoEl.className = 'history-item-info';
+        infoEl.title = '点击加载此记录';
+        infoEl.addEventListener('click', (e) => {
+            const itemNode = e.currentTarget.closest('.history-item');
+            const id = Number.parseInt(itemNode?.dataset.id || '', 10);
+            if (!Number.isNaN(id)) {
+                loadHistoryItem(id);
+            }
         });
-    });
 
-    // 绑定删除事件
-    elements.historyList.querySelectorAll('.history-item-delete').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+        const nameEl = document.createElement('div');
+        nameEl.className = 'history-item-name';
+        nameEl.textContent = name;
+
+        const emailEl = document.createElement('div');
+        emailEl.className = 'history-item-email';
+        emailEl.textContent = email;
+
+        infoEl.appendChild(nameEl);
+        infoEl.appendChild(emailEl);
+
+        const timeEl = document.createElement('div');
+        timeEl.className = 'history-item-time';
+        timeEl.textContent = time;
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'history-item-delete';
+        deleteBtn.dataset.id = String(item.id);
+        deleteBtn.title = '删除';
+        deleteBtn.textContent = '🗑️';
+        deleteBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            const id = parseInt(e.currentTarget.dataset.id);
-            deleteHistoryItem(id);
+            const id = Number.parseInt(e.currentTarget.dataset.id, 10);
+            if (!Number.isNaN(id)) {
+                deleteHistoryItem(id);
+            }
         });
+
+        itemEl.appendChild(infoEl);
+        itemEl.appendChild(timeEl);
+        itemEl.appendChild(deleteBtn);
+        fragment.appendChild(itemEl);
     });
+
+    elements.historyList.appendChild(fragment);
 }
 
 /**
@@ -108,45 +220,72 @@ function renderHistoryList(history) {
 function renderInbox(messages) {
     if (!elements.inboxList) return;
 
+    elements.inboxList.textContent = '';
+
     if (!messages || messages.length === 0) {
-        elements.inboxList.innerHTML = '<div class="inbox-empty">暂无邮件</div>';
+        const empty = document.createElement('div');
+        empty.className = 'inbox-empty';
+        empty.textContent = '暂无邮件';
+        elements.inboxList.appendChild(empty);
         return;
     }
 
-    elements.inboxList.innerHTML = messages.map(msg => {
-        const subject = escapeHtml(msg.subject) || '(无主题)';
-        const from = escapeHtml(msg.from?.address || '');
-        const intro = escapeHtml(msg.intro) || '';
-        // 尝试提取验证码（只匹配纯数字，确保安全）
+    const fragment = document.createDocumentFragment();
+
+    messages.forEach(msg => {
+        const subject = msg?.subject || '(无主题)';
+        const from = msg?.from?.address || '';
+        const intro = msg?.intro || '';
+
         const codeMatch = (msg.subject || '').match(/\b\d{4,6}\b/) || (msg.intro || '').match(/\b\d{4,6}\b/);
-        const codeHtml = codeMatch ? `<span class="verification-code" title="点击复制" data-code="${escapeHtml(codeMatch[0])}">${escapeHtml(codeMatch[0])}</span>` : '';
 
-        return `
-            <div class="email-item">
-                <div class="email-header">
-                    <span class="email-from">${from}</span>
-                    ${codeHtml}
-                </div>
-                <div class="email-subject">${subject}</div>
-                <div class="email-intro">${intro}</div>
-            </div>
-        `;
-    }).join('');
+        const itemEl = document.createElement('div');
+        itemEl.className = 'email-item';
 
-    // 使用事件委托绑定验证码点击事件
-    elements.inboxList.querySelectorAll('.verification-code').forEach(el => {
-        el.addEventListener('click', async (e) => {
-            const code = e.target.dataset.code;
-            if (code) {
-                try {
-                    await navigator.clipboard.writeText(code);
-                    showToast('验证码已复制');
-                } catch (err) {
-                    log.error('复制失败:', err);
+        const headerEl = document.createElement('div');
+        headerEl.className = 'email-header';
+
+        const fromEl = document.createElement('span');
+        fromEl.className = 'email-from';
+        fromEl.textContent = from;
+        headerEl.appendChild(fromEl);
+
+        if (codeMatch) {
+            const code = codeMatch[0];
+            const codeEl = document.createElement('span');
+            codeEl.className = 'verification-code';
+            codeEl.title = '点击复制';
+            codeEl.dataset.code = code;
+            codeEl.textContent = code;
+            codeEl.addEventListener('click', async (e) => {
+                const targetCode = e.currentTarget.dataset.code;
+                if (targetCode) {
+                    try {
+                        await navigator.clipboard.writeText(targetCode);
+                        showToast('验证码已复制');
+                    } catch (err) {
+                        log.error('复制失败:', err);
+                    }
                 }
-            }
-        });
+            });
+            headerEl.appendChild(codeEl);
+        }
+
+        const subjectEl = document.createElement('div');
+        subjectEl.className = 'email-subject';
+        subjectEl.textContent = subject;
+
+        const introEl = document.createElement('div');
+        introEl.className = 'email-intro';
+        introEl.textContent = intro;
+
+        itemEl.appendChild(headerEl);
+        itemEl.appendChild(subjectEl);
+        itemEl.appendChild(introEl);
+        fragment.appendChild(itemEl);
     });
+
+    elements.inboxList.appendChild(fragment);
 }
 
 /**
@@ -155,20 +294,54 @@ function renderInbox(messages) {
 async function renderArchiveList(archives) {
     if (!elements.archiveList) return;
 
+    elements.archiveList.textContent = '';
+
     if (!archives || archives.length === 0) {
-        elements.archiveList.innerHTML = '<div class="archive-empty">暂无存档</div>';
+        const empty = document.createElement('div');
+        empty.className = 'archive-empty';
+        empty.textContent = '暂无存档';
+        elements.archiveList.appendChild(empty);
         return;
     }
 
-    elements.archiveList.innerHTML = archives.map((archive, index) => `
-        <div class="archive-item" data-index="${index}">
-            <span class="archive-item-name">${archive.name}</span>
-            <div class="archive-item-actions">
-                <button class="load-btn" title="加载" data-action="load" data-index="${index}">📂</button>
-                <button class="delete-btn" title="删除" data-action="delete" data-index="${index}">🗑️</button>
-            </div>
-        </div>
-    `).join('');
+    const fragment = document.createDocumentFragment();
+
+    archives.forEach((archive, index) => {
+        const itemEl = document.createElement('div');
+        itemEl.className = 'archive-item';
+        itemEl.dataset.index = String(index);
+
+        const nameEl = document.createElement('span');
+        nameEl.className = 'archive-item-name';
+        nameEl.textContent = archive?.name || '';
+
+        const actionsEl = document.createElement('div');
+        actionsEl.className = 'archive-item-actions';
+
+        const loadBtn = document.createElement('button');
+        loadBtn.type = 'button';
+        loadBtn.className = 'load-btn';
+        loadBtn.title = '加载';
+        loadBtn.dataset.action = 'load';
+        loadBtn.dataset.index = String(index);
+        loadBtn.textContent = '📂';
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'delete-btn';
+        deleteBtn.title = '删除';
+        deleteBtn.dataset.action = 'delete';
+        deleteBtn.dataset.index = String(index);
+        deleteBtn.textContent = '🗑️';
+
+        actionsEl.appendChild(loadBtn);
+        actionsEl.appendChild(deleteBtn);
+        itemEl.appendChild(nameEl);
+        itemEl.appendChild(actionsEl);
+        fragment.appendChild(itemEl);
+    });
+
+    elements.archiveList.appendChild(fragment);
 }
 
 // ============ 主题功能 ============
@@ -207,4 +380,3 @@ async function initTheme() {
         log.info('初始化主题失败:', e);
     }
 }
-

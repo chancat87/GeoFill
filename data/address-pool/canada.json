@@ -1,0 +1,62 @@
+[
+  {
+    "address": "111 Wellington St",
+    "city": "Ottawa",
+    "state": "Ontario",
+    "zipCode": "K1A 0A9"
+  },
+  {
+    "address": "250 Yonge St",
+    "city": "Toronto",
+    "state": "Ontario",
+    "zipCode": "M5B 2L7"
+  },
+  {
+    "address": "100 Queen St W",
+    "city": "Toronto",
+    "state": "Ontario",
+    "zipCode": "M5H 2N2"
+  },
+  {
+    "address": "845 Hornby St",
+    "city": "Vancouver",
+    "state": "British Columbia",
+    "zipCode": "V6Z 1V1"
+  },
+  {
+    "address": "655 Burrard St",
+    "city": "Vancouver",
+    "state": "British Columbia",
+    "zipCode": "V6C 2R7"
+  },
+  {
+    "address": "1380 Sherbrooke St W",
+    "city": "Montreal",
+    "state": "Quebec",
+    "zipCode": "H3G 1J5"
+  },
+  {
+    "address": "10 Rue Sainte-Catherine O",
+    "city": "Montreal",
+    "state": "Quebec",
+    "zipCode": "H2X 1Z6"
+  },
+  {
+    "address": "9700 Jasper Ave",
+    "city": "Edmonton",
+    "state": "Alberta",
+    "zipCode": "T5J 4C3"
+  },
+  {
+    "address": "200 Portage Ave",
+    "city": "Winnipeg",
+    "state": "Manitoba",
+    "zipCode": "R3C 4X2"
+  },
+  {
+    "address": "700 W Georgia St",
+    "city": "Vancouver",
+    "state": "British Columbia",
+    "zipCode": "V7Y 1K8"
+  }
+]

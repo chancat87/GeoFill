@@ -22,6 +22,7 @@ const ARCHIVES_KEY = 'geoFillArchives';
 const AUTO_CLEAR_KEY = 'geoFillAutoClear';
 const HISTORY_KEY = 'geoFillHistory';
 const GEOAPIFY_KEY = 'geoFillGeoapifyKey';
+const ADDRESS_API_ENABLED_KEY = 'geoFillUseAddressApi';
 
 // 缓存版本
 const CACHE_VERSION = 'v3';
@@ -64,6 +65,7 @@ let userSettings = { ...DEFAULT_SETTINGS };
 // DOM 元素引用（在 DOMContentLoaded 后由 popup.js 填充）
 const elements = {
     ipInfo: null,
+    ipLocationText: null,
     ipRefresh: null,
     fields: {},
     regenerateAll: null,
@@ -78,6 +80,8 @@ const elements = {
     settingsModal: null,
     useAIToggle: null,
     aiToggleWrapper: null,
+    useAddressApiToggle: null,
+    addressApiToggleWrapper: null,
     enableAI: null,
     openaiBaseUrl: null,
     openaiKey: null,
@@ -103,5 +107,11 @@ const elements = {
     historyList: null,
     clearHistory: null,
     geoapifyKey: null,
-    testAI: null
+    testAI: null,
+    addressQualityBadge: null,
+    fillReport: null,
+    fillReportTitle: null,
+    fillReportSummary: null,
+    fillReportList: null,
+    fillReportDismiss: null
 };

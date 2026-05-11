@@ -1,0 +1,62 @@
+[
+  {
+    "address": "Gran Via 1",
+    "city": "Madrid",
+    "state": "Madrid",
+    "zipCode": "28013"
+  },
+  {
+    "address": "Calle de Alcala 45",
+    "city": "Madrid",
+    "state": "Madrid",
+    "zipCode": "28014"
+  },
+  {
+    "address": "La Rambla 91",
+    "city": "Barcelona",
+    "state": "Catalonia",
+    "zipCode": "08002"
+  },
+  {
+    "address": "Passeig de Gracia 60",
+    "city": "Barcelona",
+    "state": "Catalonia",
+    "zipCode": "08007"
+  },
+  {
+    "address": "Calle Colon 12",
+    "city": "Valencia",
+    "state": "Valencia",
+    "zipCode": "46004"
+  },
+  {
+    "address": "Calle Sierpes 5",
+    "city": "Seville",
+    "state": "Andalusia",
+    "zipCode": "41004"
+  },
+  {
+    "address": "Calle Larios 8",
+    "city": "Malaga",
+    "state": "Andalusia",
+    "zipCode": "29005"
+  },
+  {
+    "address": "Calle Mayor 20",
+    "city": "Zaragoza",
+    "state": "Aragon",
+    "zipCode": "50001"
+  },
+  {
+    "address": "Gran Via Don Diego Lopez de Haro 12",
+    "city": "Bilbao",
+    "state": "Basque Country",
+    "zipCode": "48001"
+  },
+  {
+    "address": "Calle Traperia 3",
+    "city": "Murcia",
+    "state": "Murcia",
+    "zipCode": "30001"
+  }
+]

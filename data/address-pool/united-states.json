@@ -1,0 +1,62 @@
+[
+  {
+    "address": "350 5th Ave",
+    "city": "New York",
+    "state": "New York",
+    "zipCode": "10118"
+  },
+  {
+    "address": "405 Lexington Ave",
+    "city": "New York",
+    "state": "New York",
+    "zipCode": "10174"
+  },
+  {
+    "address": "1 Market St",
+    "city": "San Francisco",
+    "state": "California",
+    "zipCode": "94105"
+  },
+  {
+    "address": "1600 Amphitheatre Pkwy",
+    "city": "Mountain View",
+    "state": "California",
+    "zipCode": "94043"
+  },
+  {
+    "address": "1 Microsoft Way",
+    "city": "Redmond",
+    "state": "Washington",
+    "zipCode": "98052"
+  },
+  {
+    "address": "233 S Wacker Dr",
+    "city": "Chicago",
+    "state": "Illinois",
+    "zipCode": "60606"
+  },
+  {
+    "address": "600 Congress Ave",
+    "city": "Austin",
+    "state": "Texas",
+    "zipCode": "78701"
+  },
+  {
+    "address": "700 Exposition Park Dr",
+    "city": "Los Angeles",
+    "state": "California",
+    "zipCode": "90037"
+  },
+  {
+    "address": "401 Biscayne Blvd",
+    "city": "Miami",
+    "state": "Florida",
+    "zipCode": "33132"
+  },
+  {
+    "address": "151 3rd St",
+    "city": "San Francisco",
+    "state": "California",
+    "zipCode": "94103"
+  }
+]

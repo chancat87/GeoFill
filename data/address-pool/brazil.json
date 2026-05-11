@@ -1,0 +1,62 @@
+[
+  {
+    "address": "Avenida Paulista 1578",
+    "city": "Sao Paulo",
+    "state": "Sao Paulo",
+    "zipCode": "01310-200"
+  },
+  {
+    "address": "Rua Augusta 1200",
+    "city": "Sao Paulo",
+    "state": "Sao Paulo",
+    "zipCode": "01304-001"
+  },
+  {
+    "address": "Avenida Atlantica 1702",
+    "city": "Rio de Janeiro",
+    "state": "Rio de Janeiro",
+    "zipCode": "22021-001"
+  },
+  {
+    "address": "Rua do Catete 120",
+    "city": "Rio de Janeiro",
+    "state": "Rio de Janeiro",
+    "zipCode": "22220-000"
+  },
+  {
+    "address": "SCS Quadra 2 Bloco C",
+    "city": "Brasilia",
+    "state": "Federal District",
+    "zipCode": "70300-902"
+  },
+  {
+    "address": "Avenida Sete de Setembro 2500",
+    "city": "Salvador",
+    "state": "Bahia",
+    "zipCode": "40080-001"
+  },
+  {
+    "address": "Avenida Beira Mar 2200",
+    "city": "Fortaleza",
+    "state": "Ceara",
+    "zipCode": "60165-121"
+  },
+  {
+    "address": "Avenida Afonso Pena 3000",
+    "city": "Belo Horizonte",
+    "state": "Minas Gerais",
+    "zipCode": "30130-009"
+  },
+  {
+    "address": "Rua XV de Novembro 450",
+    "city": "Curitiba",
+    "state": "Parana",
+    "zipCode": "80020-310"
+  },
+  {
+    "address": "Avenida Boa Viagem 800",
+    "city": "Recife",
+    "state": "Pernambuco",
+    "zipCode": "51011-000"
+  }
+]

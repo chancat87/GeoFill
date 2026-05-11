@@ -1,0 +1,62 @@
+[
+  {
+    "address": "1 Connaught Place",
+    "city": "Central",
+    "state": "Hong Kong Island",
+    "zipCode": ""
+  },
+  {
+    "address": "10 Des Voeux Road Central",
+    "city": "Central",
+    "state": "Hong Kong Island",
+    "zipCode": ""
+  },
+  {
+    "address": "18 Salisbury Road",
+    "city": "Tsim Sha Tsui",
+    "state": "Kowloon",
+    "zipCode": ""
+  },
+  {
+    "address": "8 Canton Road",
+    "city": "Tsim Sha Tsui",
+    "state": "Kowloon",
+    "zipCode": ""
+  },
+  {
+    "address": "555 Hennessy Road",
+    "city": "Causeway Bay",
+    "state": "Hong Kong Island",
+    "zipCode": ""
+  },
+  {
+    "address": "388 Prince Edward Road",
+    "city": "Kowloon",
+    "state": "Kowloon",
+    "zipCode": ""
+  },
+  {
+    "address": "99 Queen's Road East",
+    "city": "Central",
+    "state": "Hong Kong Island",
+    "zipCode": ""
+  },
+  {
+    "address": "1 Austin Road West",
+    "city": "Tsim Sha Tsui",
+    "state": "Kowloon",
+    "zipCode": ""
+  },
+  {
+    "address": "12 Sha Tin Centre Street",
+    "city": "Sha Tin",
+    "state": "New Territories",
+    "zipCode": ""
+  },
+  {
+    "address": "33 Canton Road",
+    "city": "Tsim Sha Tsui",
+    "state": "Kowloon",
+    "zipCode": ""
+  }
+]

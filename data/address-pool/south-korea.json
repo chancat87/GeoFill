@@ -1,0 +1,62 @@
+[
+  {
+    "address": "110 Sejong-daero",
+    "city": "Seoul",
+    "state": "Seoul",
+    "zipCode": "04524"
+  },
+  {
+    "address": "231 Teheran-ro",
+    "city": "Seoul",
+    "state": "Seoul",
+    "zipCode": "06142"
+  },
+  {
+    "address": "1 Jungang-daero",
+    "city": "Busan",
+    "state": "Busan",
+    "zipCode": "48939"
+  },
+  {
+    "address": "160 Incheon-daero",
+    "city": "Incheon",
+    "state": "Incheon",
+    "zipCode": "22382"
+  },
+  {
+    "address": "100 Dalseong-ro",
+    "city": "Daegu",
+    "state": "Daegu",
+    "zipCode": "41911"
+  },
+  {
+    "address": "101 Dunsan-ro",
+    "city": "Daejeon",
+    "state": "Daejeon",
+    "zipCode": "35242"
+  },
+  {
+    "address": "50 Geumnam-ro",
+    "city": "Gwangju",
+    "state": "Gwangju",
+    "zipCode": "61482"
+  },
+  {
+    "address": "85 Gwonseon-ro",
+    "city": "Suwon",
+    "state": "Gyeonggi",
+    "zipCode": "16488"
+  },
+  {
+    "address": "22 Namgu-ro",
+    "city": "Ulsan",
+    "state": "Ulsan",
+    "zipCode": "44675"
+  },
+  {
+    "address": "12 Changwon-daero",
+    "city": "Changwon",
+    "state": "South Gyeongsang",
+    "zipCode": "51435"
+  }
+]

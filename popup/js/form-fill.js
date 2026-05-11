@@ -1,10 +1,370 @@
-/**
- * 表单填写功能
+﻿/**
+ * Form filling logic.
  */
 
-/**
- * 在页面中填写表单
- */
+function parseAiMappingContent(content) {
+    const raw = String(content || '{}');
+    let jsonStr = raw.replace(/```json\s*|\s*```/g, '').trim();
+    const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+    if (jsonMatch) jsonStr = jsonMatch[0];
+    return JSON.parse(jsonStr);
+}
+
+function normalizeMappingValue(value) {
+    if (typeof value === 'number') return String(value);
+    if (typeof value === 'boolean') return value ? 'true' : 'false';
+    if (typeof value === 'string') return value;
+    return '';
+}
+
+function buildFieldMetaMap(scanResult) {
+    const map = new Map();
+    const fields = Array.isArray(scanResult?.fields) ? scanResult.fields : [];
+
+    fields.forEach((field) => {
+        const id = String(field?.id || '').trim();
+        if (id) map.set(id, field);
+
+        const name = String(field?.name || '').trim();
+        if (name && !map.has(name)) map.set(name, field);
+    });
+
+    return map;
+}
+
+function sanitizeAiFormMapping(rawMapping, scanResult) {
+    if (!rawMapping || typeof rawMapping !== 'object' || Array.isArray(rawMapping)) {
+        return {};
+    }
+
+    const result = {};
+    const fieldMap = buildFieldMetaMap(scanResult);
+
+    for (const [rawKey, rawValue] of Object.entries(rawMapping)) {
+        const key = String(rawKey || '').trim();
+        if (!key) continue;
+        if (!fieldMap.has(key) && !/^field_\d+$/.test(key)) continue;
+
+        let val = normalizeMappingValue(rawValue);
+        if (!val) continue;
+
+        val = val
+            .replace(/[\uFF01-\uFF5E]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+            .replace(/\u3000/g, ' ')
+            .replace(/[\u0000-\u001F\u007F]/g, '')
+            .trim();
+
+        if (!val) continue;
+        result[key] = val.slice(0, 200);
+    }
+
+    return result;
+}
+
+function sanitizeFormMapping(mapping, scanResult) {
+    const fields = Array.isArray(scanResult?.fields) ? scanResult.fields : [];
+
+    Object.keys(mapping).forEach((key) => {
+        let val = mapping[key];
+        if (typeof val !== 'string') {
+            delete mapping[key];
+            return;
+        }
+
+        const fieldMeta = fields.find((f) => f.id === key || f.name === key);
+        const label = fieldMeta ? (fieldMeta.label || '').toLowerCase() : '';
+        const type = fieldMeta ? (fieldMeta.type || '').toLowerCase() : '';
+        const name = fieldMeta ? (fieldMeta.name || '').toLowerCase() : '';
+        const lowerKey = key.toLowerCase();
+
+        const isPassword = type === 'password' || lowerKey.includes('password') || name.includes('password') || label.includes('password');
+        const isEmail = type === 'email' || lowerKey.includes('email') || name.includes('email') || label.includes('email');
+        const isPhone = type === 'tel' || lowerKey.includes('phone') || lowerKey.includes('mobile') || name.includes('phone') || label.includes('phone');
+        const isZip = lowerKey.includes('zip') || lowerKey.includes('postal') || name.includes('zip') || label.includes('postal');
+
+        if (isPassword) {
+            if (currentData.password) {
+                val = currentData.password;
+            } else if (window.generators?.generatePasswordWithSettings) {
+                val = window.generators.generatePasswordWithSettings(userSettings);
+            } else {
+                val = val.replace(/[^\x20-\x7E]/g, '');
+            }
+        } else if (isEmail) {
+            val = val.replace(/[^\x20-\x7E]/g, '').replace(/\s+/g, '').toLowerCase();
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val) && currentData.email) {
+                val = currentData.email;
+            }
+        } else if (isPhone) {
+            if (currentData.phone) {
+                val = currentData.phone;
+            } else if (window.generators?.generatePhone) {
+                const country = ipData.country || 'United States';
+                val = window.generators.generatePhone(country);
+            } else {
+                val = val.replace(/[^\d+\-() ]/g, '');
+            }
+        } else if (isZip) {
+            val = val.replace(/[^\dA-Za-z -]/g, '');
+            if (!val && currentData.zipCode) {
+                val = currentData.zipCode;
+            }
+        } else {
+            val = val.replace(/\s+/g, ' ').trim();
+        }
+
+        if (!val) {
+            delete mapping[key];
+            return;
+        }
+
+        mapping[key] = String(val).slice(0, 200);
+    });
+}
+
+function buildFillResultMessage(result, prefix = '\u586b\u8868\u5b8c\u6210') {
+    const filledCount = Number(result?.filledCount || 0);
+    const validation = result?.validation || {};
+    const diagnostics = result?.diagnostics || {};
+    const missingRequired = Array.isArray(validation.missingRequiredFields) ? validation.missingRequiredFields.length : 0;
+    const unfilledRequested = Array.isArray(validation.unfilledRequestedFields) ? validation.unfilledRequestedFields.length : 0;
+    const pageErrors = Array.isArray(diagnostics.pageErrors) ? diagnostics.pageErrors.length : 0;
+    const fieldIssues = Array.isArray(diagnostics.fieldIssues) ? diagnostics.fieldIssues : [];
+    const selectMisses = fieldIssues.filter((issue) => issue.reason === 'select_option_not_matched').length;
+    const issues = missingRequired + unfilledRequested + pageErrors;
+
+    let message = `${prefix}\uff0c\u5df2\u586b ${filledCount} \u4e2a\u5b57\u6bb5`;
+    if (issues > 0) {
+        const parts = [];
+        if (missingRequired > 0) parts.push(`${missingRequired} \u4e2a\u5fc5\u586b\u9879\u672a\u586b`);
+        if (unfilledRequested > 0) {
+            if (selectMisses > 0) {
+                parts.push(`${unfilledRequested} \u4e2a\u5b57\u6bb5\u672a\u5339\u914d\uff0c\u5176\u4e2d ${selectMisses} \u4e2a\u4e0b\u62c9\u65e0\u5339\u914d\u9879`);
+            } else {
+                parts.push(`${unfilledRequested} \u4e2a\u5b57\u6bb5\u672a\u5339\u914d`);
+            }
+        }
+        if (pageErrors > 0) parts.push(`\u9875\u9762\u63d0\u793a ${pageErrors} \u6761\u9519\u8bef`);
+        message += `\uff0c\u4ecd\u6709 ${parts.join('\u3001')}`;
+    }
+
+    return message;
+}
+
+function getPopupElements() {
+    return typeof elements !== 'undefined' ? elements : null;
+}
+
+const FILL_ISSUE_REASON_LABELS = {
+    select_option_not_matched: '\u4e0b\u62c9\u6ca1\u6709\u5339\u914d\u9879',
+    radio_option_not_matched: '\u5355\u9009\u9879\u672a\u5339\u914d',
+    required_field_empty: '\u5fc5\u586b\u9879\u672a\u586b',
+    field_not_found: '\u9875\u9762\u6ca1\u6709\u627e\u5230\u5bf9\u5e94\u5b57\u6bb5',
+    empty_after_fill: '\u586b\u5199\u540e\u4ecd\u4e3a\u7a7a',
+    page_error: '\u9875\u9762\u9519\u8bef\u63d0\u793a',
+    unknown: '\u672a\u77e5\u95ee\u9898'
+};
+
+function getFillIssueReasonLabel(reason) {
+    return FILL_ISSUE_REASON_LABELS[reason] || FILL_ISSUE_REASON_LABELS.unknown;
+}
+
+function cleanReportText(value, fallback = '') {
+    const text = String(value || '').replace(/\s+/g, ' ').trim();
+    return text || fallback;
+}
+
+function getIssueFieldLabel(issue) {
+    return cleanReportText(
+        issue?.label || issue?.field || issue?.target?.label || issue?.target?.name || issue?.target?.id,
+        '\u672a\u547d\u540d\u5b57\u6bb5'
+    );
+}
+
+function getCandidateHint(issue) {
+    const candidates = Array.isArray(issue?.candidates) ? issue.candidates : [];
+    const labels = candidates
+        .map((candidate) => cleanReportText(candidate?.label || candidate?.name || candidate?.id))
+        .filter(Boolean)
+        .slice(0, 3);
+
+    if (labels.length === 0) return '';
+    return `\u5019\u9009\u5b57\u6bb5: ${labels.join(', ')}`;
+}
+
+function getRequestedValueHint(issue) {
+    const value = cleanReportText(issue?.requestedValue);
+    if (!value) return '';
+    return `\u60f3\u586b: ${value.slice(0, 80)}`;
+}
+
+function getSelectOptionsHint(issue) {
+    const candidates = Array.isArray(issue?.candidates) ? issue.candidates : [];
+    const options = candidates
+        .flatMap((candidate) => Array.isArray(candidate?.options) ? candidate.options : [])
+        .map((option) => cleanReportText(option?.text || option?.value || option?.code))
+        .filter(Boolean)
+        .slice(0, 6);
+
+    if (options.length === 0) return '';
+    return `\u9875\u9762\u53ef\u9009: ${options.join(', ')}`;
+}
+
+function normalizeFillReportItems(result) {
+    const diagnostics = result?.diagnostics || {};
+    const validation = result?.validation || {};
+    const items = [];
+    const seen = new Set();
+
+    function addItem(type, title, detail, keyParts = []) {
+        const cleanTitle = cleanReportText(title, '\u586b\u5199\u95ee\u9898');
+        const cleanDetail = cleanReportText(detail);
+        const key = [type, cleanTitle, cleanDetail, ...keyParts].join('|').toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        items.push({ type, title: cleanTitle, detail: cleanDetail });
+    }
+
+    const fieldIssues = Array.isArray(diagnostics.fieldIssues) ? diagnostics.fieldIssues : [];
+    fieldIssues.forEach((issue) => {
+        const fieldLabel = getIssueFieldLabel(issue);
+        const reasonLabel = getFillIssueReasonLabel(issue?.reason);
+        const candidateHint = getCandidateHint(issue);
+        const requestedValueHint = getRequestedValueHint(issue);
+        const selectOptionsHint = getSelectOptionsHint(issue);
+        const detailParts = [reasonLabel];
+        if (requestedValueHint) detailParts.push(requestedValueHint);
+        if (selectOptionsHint) detailParts.push(selectOptionsHint);
+        if (candidateHint) detailParts.push(candidateHint);
+        addItem('field', fieldLabel, detailParts.join(' | '), [issue?.reason || '']);
+    });
+
+    const reportedRequired = new Set(fieldIssues
+        .filter((issue) => issue?.reason === 'required_field_empty')
+        .map((issue) => cleanReportText(issue?.field || issue?.label || issue?.target?.id).toLowerCase()));
+
+    (validation.missingRequiredFields || []).forEach((field) => {
+        const label = cleanReportText(field?.label || field?.name || field?.id, '\u5fc5\u586b\u5b57\u6bb5');
+        const key = cleanReportText(field?.intent || field?.name || field?.id || label).toLowerCase();
+        if (reportedRequired.has(key)) return;
+        addItem('field', label, FILL_ISSUE_REASON_LABELS.required_field_empty, ['required']);
+    });
+
+    const reportedUnfilled = new Set(fieldIssues
+        .filter((issue) => issue?.kind === 'requested_unfilled')
+        .map((issue) => cleanReportText(issue?.field || issue?.label).toLowerCase()));
+
+    (validation.unfilledRequestedFields || []).forEach((issue) => {
+        const field = cleanReportText(issue?.field, '\u672a\u5339\u914d\u5b57\u6bb5');
+        if (reportedUnfilled.has(field.toLowerCase())) return;
+        addItem('field', field, FILL_ISSUE_REASON_LABELS.field_not_found, ['unfilled']);
+    });
+
+    const pageErrors = Array.isArray(diagnostics.pageErrors) ? diagnostics.pageErrors : [];
+    pageErrors.forEach((error) => {
+        const fieldLabel = cleanReportText(error?.field?.label || error?.field?.name || error?.field?.id);
+        const title = fieldLabel || FILL_ISSUE_REASON_LABELS.page_error;
+        const detail = cleanReportText(error?.text, FILL_ISSUE_REASON_LABELS.page_error);
+        addItem('page', title, detail, [error?.source || '']);
+    });
+
+    return items.slice(0, 8);
+}
+
+function hasFillResultIssues(result) {
+    const diagnostics = result?.diagnostics || {};
+    const validation = result?.validation || {};
+    const hasDiagnosticsIssues = diagnostics.isClean === false
+        || (Array.isArray(diagnostics.fieldIssues) && diagnostics.fieldIssues.length > 0)
+        || (Array.isArray(diagnostics.pageErrors) && diagnostics.pageErrors.length > 0);
+    const hasValidationIssues = validation.isComplete === false
+        || (Array.isArray(validation.missingRequiredFields) && validation.missingRequiredFields.length > 0)
+        || (Array.isArray(validation.unfilledRequestedFields) && validation.unfilledRequestedFields.length > 0);
+    return hasDiagnosticsIssues || hasValidationIssues;
+}
+
+function buildFillReport(result, prefix = '\u586b\u8868\u5b8c\u6210') {
+    const filledCount = Number(result?.filledCount || 0);
+    const diagnostics = result?.diagnostics || {};
+    const validation = result?.validation || {};
+    const summary = diagnostics.summary || {};
+    const items = normalizeFillReportItems(result);
+    const hasIssues = hasFillResultIssues(result);
+    const issueCount = items.length || Number(summary.fieldIssueCount || 0) + Number(summary.pageErrorCount || 0);
+    const missingRequired = Array.isArray(validation.missingRequiredFields) ? validation.missingRequiredFields.length : Number(summary.missingRequiredCount || 0);
+    const unfilledRequested = Array.isArray(validation.unfilledRequestedFields) ? validation.unfilledRequestedFields.length : Number(summary.unfilledRequestedCount || 0);
+    const pageErrors = Array.isArray(diagnostics.pageErrors) ? diagnostics.pageErrors.length : Number(summary.pageErrorCount || 0);
+    const parts = [`\u5df2\u586b ${filledCount} \u4e2a\u5b57\u6bb5`];
+
+    if (missingRequired > 0) parts.push(`${missingRequired} \u4e2a\u5fc5\u586b\u672a\u586b`);
+    if (unfilledRequested > 0) parts.push(`${unfilledRequested} \u4e2a\u5b57\u6bb5\u672a\u5339\u914d`);
+    if (pageErrors > 0) parts.push(`${pageErrors} \u6761\u9875\u9762\u9519\u8bef`);
+    if (!hasIssues) parts.push('\u672a\u53d1\u73b0\u660e\u663e\u95ee\u9898');
+
+    return {
+        hasIssues,
+        issueCount,
+        title: hasIssues ? '\u586b\u5199\u62a5\u544a\uff1a\u6709\u9700\u68c0\u67e5\u7684\u9879' : '\u586b\u5199\u62a5\u544a\uff1a\u672a\u53d1\u73b0\u95ee\u9898',
+        summary: `${prefix}\uff0c${parts.join('\uff0c')}`,
+        items
+    };
+}
+
+function hideFillReport() {
+    const popupElements = getPopupElements();
+    if (!popupElements?.fillReport) return;
+    popupElements.fillReport.hidden = true;
+    popupElements.fillReport.classList.remove('is-clean');
+    if (popupElements.fillReportList) popupElements.fillReportList.textContent = '';
+}
+
+function renderFillReport(result, prefix = '\u586b\u8868\u5b8c\u6210') {
+    const popupElements = getPopupElements();
+    if (!popupElements?.fillReport) return buildFillReport(result, prefix);
+
+    const report = buildFillReport(result, prefix);
+    popupElements.fillReport.hidden = false;
+    popupElements.fillReport.classList.toggle('is-clean', !report.hasIssues);
+
+    if (popupElements.fillReportTitle) popupElements.fillReportTitle.textContent = report.title;
+    if (popupElements.fillReportSummary) popupElements.fillReportSummary.textContent = report.summary;
+    if (popupElements.fillReportList) {
+        popupElements.fillReportList.textContent = '';
+        report.items.forEach((item) => {
+            const itemEl = document.createElement('div');
+            itemEl.className = 'fill-report-item';
+
+            const titleEl = document.createElement('div');
+            titleEl.className = 'fill-report-item-title';
+            titleEl.textContent = item.title;
+
+            const detailEl = document.createElement('div');
+            detailEl.className = 'fill-report-item-detail';
+            detailEl.textContent = item.detail;
+
+            itemEl.appendChild(titleEl);
+            itemEl.appendChild(detailEl);
+            popupElements.fillReportList.appendChild(itemEl);
+        });
+    }
+
+    return report;
+}
+
+function showFillResult(result, prefix = '\u586b\u8868\u5b8c\u6210') {
+    const message = buildFillResultMessage(result, prefix);
+    const report = renderFillReport(result, prefix);
+    showToast(message);
+    return report;
+}
+
+function closePopupWhenClean(report) {
+    if (report?.hasIssues) return;
+    if (typeof window !== 'undefined' && typeof window.close === 'function') {
+        window.close();
+    }
+}
+
 async function fillFormInPage() {
     updateCurrentDataFromInputs();
     const btn = elements.fillForm;
@@ -13,33 +373,29 @@ async function fillFormInPage() {
     try {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-        // 检查 AI 开关是否开启（主界面开关）
         const useAI = elements.useAIToggle?.checked && userSettings.openaiKey;
         if (useAI) {
-            btn.textContent = '🤖 分析中...';
+            btn.textContent = '\u5904\u7406\u4e2d...';
             btn.disabled = true;
 
-            // 1. 扫描页面表单
             const scanResult = await sendMessageToTab(tab.id, { action: 'scanForm' });
-
             if (!scanResult || !scanResult.fields || scanResult.fields.length === 0) {
-                throw new Error('未找到可见的表单字段');
+                throw new Error('\u672a\u627e\u5230\u53ef\u89c1\u8868\u5355\u5b57\u6bb5');
             }
 
-            btn.textContent = '🧠 思考中...';
-
-            // 2. 构建 AI Prompt
             const prompt = buildAIFormPrompt(scanResult);
-
-            // 3. 调用 AI
             const apiUrl = normalizeApiUrl(userSettings.openaiBaseUrl);
-            log.info(' AI Request URL:', apiUrl);
+
+            const granted = await ensureHostPermission(apiUrl);
+            if (!granted) {
+                throw new Error('\u672a\u6388\u4e88 AI \u63a5\u53e3\u7ad9\u70b9\u6743\u9650');
+            }
 
             const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${userSettings.openaiKey}`
+                    Authorization: `Bearer ${userSettings.openaiKey}`
                 },
                 body: JSON.stringify({
                     model: userSettings.openaiModel,
@@ -54,57 +410,42 @@ async function fillFormInPage() {
             const contentType = response.headers.get('content-type');
             if (!response.ok) {
                 const text = await response.text();
-                log.error('API Error Response:', text);
                 throw new Error(`API Error (${response.status}): ${text.slice(0, 100)}...`);
             }
+
             if (!contentType || !contentType.includes('application/json')) {
                 const text = await response.text();
-                log.error('API Invalid Content-Type:', contentType, text);
-                throw new Error(`API 返回了非 JSON 数据(可能是 HTML)。请检查 API 地址是否正确。预览: ${text.slice(0, 50)}...`);
+                throw new Error(`API \u8fd4\u56de\u975e JSON \u6570\u636e: ${text.slice(0, 80)}...`);
             }
 
             const data = await response.json();
-            const content = data.choices[0].message.content;
+            const content = data.choices?.[0]?.message?.content || '{}';
 
-            let jsonStr = content.replace(/```json\n ?|\n ? ```/g, '').trim();
-            const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
-            if (jsonMatch) jsonStr = jsonMatch[0];
-
-            const mapping = JSON.parse(jsonStr);
-
-            // 清洗数据
+            const rawMapping = parseAiMappingContent(content);
+            const mapping = sanitizeAiFormMapping(rawMapping, scanResult);
             sanitizeFormMapping(mapping, scanResult);
 
-            log.info(' Sanitized & Overridden Mapping:', mapping);
+            btn.textContent = '\u586b\u5199\u4e2d...';
+            const result = await sendMessageToTab(tab.id, { action: 'fillFormSmart', data: mapping });
 
-            btn.textContent = '✍️ 填写中...';
-
-            // 4. 发送填表指令
-            await sendMessageToTab(tab.id, { action: 'fillFormSmart', data: mapping });
-
-            showToast('AI 智能填写完成');
+            const report = showFillResult(result, 'AI \u667a\u80fd\u586b\u8868\u5b8c\u6210');
             saveToHistory();
-            window.close();
-
+            closePopupWhenClean(report);
         } else {
-            // 传统逻辑
-            await sendMessageToTab(tab.id, { action: 'fillForm', data: currentData });
+            const result = await sendMessageToTab(tab.id, { action: 'fillForm', data: currentData });
             saveToHistory();
-            window.close();
+            const report = showFillResult(result);
+            closePopupWhenClean(report);
         }
-
     } catch (error) {
-        log.error('填写表单失败:', error);
-        showToast('填写失败: ' + error.message);
+        log.error('Fill form failed:', error);
+        showToast('\u586b\u5199\u5931\u8d25: ' + error.message);
     } finally {
         btn.textContent = originalText;
         btn.disabled = false;
     }
 }
 
-/**
- * 构建 AI 表单填写 Prompt
- */
 function buildAIFormPrompt(scanResult) {
     return `
 You are an advanced AI Form Assistant. Your goal is to fill a web form intelligently, acting as the Persona defined below.
@@ -121,118 +462,36 @@ Form Fields Found:
 ${JSON.stringify(scanResult.fields)}
 
 Instructions:
-1. **Analyze Context**: Determine the purpose of this form (e.g., "Job Application", "E-commerce Checkout", "Casual Survey", "Government Registration").
-2. **Analyze Fields**: For each field, evaluate:
-   - **Necessity**: Is it required? (Check 'required' attribute and context).
-   - **Privacy/Risk**: Is this sensitive info (e.g., Income, ID, Phone)?
-3. **Decide Strategy**:
-   - **Real Format**: For standard required fields, use the Persona's data.
-   - **Obfuscate/Blur**: For sensitive but optional fields (like exact income), provide a general range or a realistic but safe estimate if appropriate for the context.
-   - **Leave Empty**: If a field is optional, sensitive, and not relevant to the form's core purpose, you may choose to leave it empty (return null or empty string).
-   - **Refuse/N/A**: If a field is intrusive and allows text input, you may fill "N/A" or "Prefer not to say".
-4. **Cultural & Language Adaptation** (CRITICAL):
-   - **GLOBAL RULE**: ALWAYS use **Half-width (ASCII)** characters for: **Password**, **Email**, **Phone**, **Postal Code**, **Numbers**. NEVER use Full-width (e.g., １２３, ａｂｃ) for these fields.
-   - **Address Logic**: If the form expects a **Local Address** (e.g., has "Prefecture" dropdown, or specific local Zip format) and the Current User Profile has a foreign address, **IGNORE the Profile address and INVENT a valid local address** for the page's target country.
-   - **Detect Language**: The page language is '${scanResult.pageContext.language}'. Adapt formats accordingly.
-   - **Japan (JP)**:
-     - **Name**: Use Surname First order. Use Kanji for Name fields, Katakana for "Furigana/Reading" fields.
-     - **Postal Code**: Check placeholder. If unknown, try "NNN-NNNN" (ASCII).
-     - **Phone**: Check placeholder. If unknown, generate a **RANDOM** valid mobile number (starts with 090, 080, or 070). **DO NOT** use "1234" or "0000" sequences. Example: "080-3928-4719".
-   - **Germany (DE)**: Ensure addresses are precise (Street + Number, Zip City). Use formal tone.
-   - **China (CN)**: Generate valid-looking Resident ID numbers (18 digits) if requested. Use +86 phone format.
-   - **Tone**: Match the questionnaire tone (Conservative/Formal for Gov/Bank; Open/Casual for Social/Gaming).
-5. **Invent Missing Data**: If the Persona lacks specific data (e.g., Company Name), invent it consistently with the Persona's background.
+1. Analyze context and field intent.
+2. Respect required fields and avoid intrusive optional fields when reasonable.
+3. Keep locale-correct formats (name/address/zip/phone).
+4. Use ASCII for password/email/phone/zip and numeric-only fields.
+5. Return only JSON mapping from field id to value.
 
-Output Format:
-Return ONLY a valid JSON object where keys are the field 'id' and values are the string to fill.
-Example:
+Output format example:
 {
   "field_1": "John",
-  "income_field": "50,000 - 60,000 USD",
-  "optional_intrusive_field": ""
+  "field_2": "Doe"
 }
 `;
 }
 
-/**
- * 清洗 AI 返回的表单映射数据
- */
-function sanitizeFormMapping(mapping, scanResult) {
-    Object.keys(mapping).forEach(key => {
-        let val = mapping[key];
-        if (typeof val === 'string') {
-            // 1. 全角转半角 (通用处理)
-            val = val.replace(/[\uFF01-\uFF5E]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
-                .replace(/\u3000/g, ' ');
-
-            // 2. 查找字段元数据
-            const fieldMeta = scanResult.fields.find(f => f.id === key);
-            const label = fieldMeta ? (fieldMeta.label || '').toLowerCase() : '';
-            const type = fieldMeta ? (fieldMeta.type || '').toLowerCase() : '';
-            const name = fieldMeta ? (fieldMeta.name || '').toLowerCase() : '';
-            const lowerKey = key.toLowerCase();
-
-            // 3. 智能判断字段类型并清洗
-            const isPassword = type === 'password' || lowerKey.includes('password') || name.includes('password') || label.includes('密码') || label.includes('パスワード');
-            const isEmail = type === 'email' || lowerKey.includes('email') || name.includes('email') || label.includes('邮箱') || label.includes('メール');
-            const isPhone = type === 'tel' || lowerKey.includes('phone') || lowerKey.includes('mobile') || label.includes('电话') || label.includes('電話') || label.includes('携帯');
-            const isZip = lowerKey.includes('zip') || lowerKey.includes('postal') || label.includes('邮编') || label.includes('郵便');
-
-            if (isPassword) {
-                // 密码：强制使用当前 Profile 的密码
-                if (currentData.password) {
-                    val = currentData.password;
-                } else if (window.generators && window.generators.generatePasswordWithSettings) {
-                    val = window.generators.generatePasswordWithSettings(userSettings);
-                } else {
-                    val = val.replace(/[^\x00-\x7F]/g, '');
-                }
-            } else if (isEmail) {
-                // 邮箱：只保留 ASCII
-                val = val.replace(/[^\x00-\x7F]/g, '');
-            } else if (isPhone) {
-                // 电话：强制使用当前 Profile 的电话
-                if (currentData.phone) {
-                    val = currentData.phone;
-                } else if (window.generators && window.generators.generatePhone) {
-                    const country = ipData.country || 'United States';
-                    val = window.generators.generatePhone(country);
-                } else {
-                    val = val.replace(/[^\d-]/g, '');
-                }
-            } else if (isZip) {
-                // 邮编：只保留数字和横杠
-                val = val.replace(/[^\d-]/g, '');
-            }
-
-            mapping[key] = val;
-        }
-    });
-}
-
-/**
- * 普通填表（不使用 AI，传统方式）
- */
 async function fillFormNormalInPage() {
     updateCurrentDataFromInputs();
-    const btn = elements.fillFormNormal;
+    const btn = elements.fillForm;
     const originalText = btn.textContent;
 
     try {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-        await sendMessageToTab(tab.id, { action: 'fillForm', data: currentData });
+        const result = await sendMessageToTab(tab.id, { action: 'fillForm', data: currentData });
         saveToHistory();
-        showToast('普通填表完成');
-        window.close();
-
+        const report = showFillResult(result, '\u666e\u901a\u586b\u8868\u5b8c\u6210');
+        closePopupWhenClean(report);
     } catch (error) {
-        log.error('普通填表失败:', error);
-        showToast('填写失败: ' + error.message);
+        log.error('Normal fill failed:', error);
+        showToast('\u586b\u5199\u5931\u8d25: ' + error.message);
     } finally {
         btn.textContent = originalText;
         btn.disabled = false;
     }
 }
-
-// copyAllToClipboard 已在 utils.js 中定义

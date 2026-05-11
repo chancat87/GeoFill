@@ -1,0 +1,62 @@
+[
+  {
+    "address": "Damrak 1",
+    "city": "Amsterdam",
+    "state": "North Holland",
+    "zipCode": "1012LG"
+  },
+  {
+    "address": "Kalverstraat 25",
+    "city": "Amsterdam",
+    "state": "North Holland",
+    "zipCode": "1012NX"
+  },
+  {
+    "address": "Coolsingel 100",
+    "city": "Rotterdam",
+    "state": "South Holland",
+    "zipCode": "3012AG"
+  },
+  {
+    "address": "Lijnbaan 1",
+    "city": "Rotterdam",
+    "state": "South Holland",
+    "zipCode": "3012EK"
+  },
+  {
+    "address": "Vredenburg 40",
+    "city": "Utrecht",
+    "state": "Utrecht",
+    "zipCode": "3511BD"
+  },
+  {
+    "address": "Grote Markt 1",
+    "city": "Groningen",
+    "state": "Groningen",
+    "zipCode": "9712HN"
+  },
+  {
+    "address": "Markt 10",
+    "city": "Eindhoven",
+    "state": "North Brabant",
+    "zipCode": "5611EC"
+  },
+  {
+    "address": "Spuistraat 200",
+    "city": "The Hague",
+    "state": "South Holland",
+    "zipCode": "2511BW"
+  },
+  {
+    "address": "Stationsplein 45",
+    "city": "Arnhem",
+    "state": "Gelderland",
+    "zipCode": "6811KG"
+  },
+  {
+    "address": "Mariastraat 11",
+    "city": "Haarlem",
+    "state": "North Holland",
+    "zipCode": "2011LP"
+  }
+]

@@ -3,6 +3,12 @@
   "name": "GeoFill - 智能注册助手",
   "version": "1.8.0",
   "description": "根据地理位置智能生成注册信息并一键填写表单",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "geofill@example.com",
+      "strict_min_version": "109.0"
+    }
+  },
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -16,13 +22,14 @@
     }
   },
   "background": {
-    "service_worker": "background.js"
+    "scripts": ["background.js"]
   },
   "permissions": [
     "activeTab",
     "scripting",
     "storage",
     "contextMenus",
+    "menus",
     "permissions"
   ],
   "host_permissions": [
@@ -30,6 +37,11 @@
     "https://ipwho.is/*",
     "https://api.mail.tm/*",
     "https://*.mail.tm/*"
+  ],
+  "optional_host_permissions": [
+    "https://api.geoapify.com/*",
+    "https://nominatim.openstreetmap.org/*",
+    "https://api.openai.com/*"
   ],
   "commands": {
     "fill-form": {
@@ -39,10 +51,5 @@
       },
       "description": "填写表单"
     }
-  },
-  "optional_host_permissions": [
-    "https://api.geoapify.com/*",
-    "https://nominatim.openstreetmap.org/*",
-    "https://api.openai.com/*"
-  ]
+  }
 }

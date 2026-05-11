@@ -1,0 +1,62 @@
+[
+  {
+    "address": "10 Downing Street",
+    "city": "London",
+    "state": "Greater London",
+    "zipCode": "SW1A 2AA"
+  },
+  {
+    "address": "221B Baker Street",
+    "city": "London",
+    "state": "Greater London",
+    "zipCode": "NW1 6XE"
+  },
+  {
+    "address": "1 Piccadilly",
+    "city": "Manchester",
+    "state": "Greater Manchester",
+    "zipCode": "M1 1RG"
+  },
+  {
+    "address": "45 Deansgate",
+    "city": "Manchester",
+    "state": "Greater Manchester",
+    "zipCode": "M3 2AY"
+  },
+  {
+    "address": "12 New Street",
+    "city": "Birmingham",
+    "state": "West Midlands",
+    "zipCode": "B2 4QA"
+  },
+  {
+    "address": "100 Princes Street",
+    "city": "Edinburgh",
+    "state": "Scotland",
+    "zipCode": "EH2 3AA"
+  },
+  {
+    "address": "8 George Square",
+    "city": "Glasgow",
+    "state": "Scotland",
+    "zipCode": "G2 1DY"
+  },
+  {
+    "address": "30 Park Row",
+    "city": "Leeds",
+    "state": "West Yorkshire",
+    "zipCode": "LS1 5JD"
+  },
+  {
+    "address": "20 Queen Square",
+    "city": "Bristol",
+    "state": "South West England",
+    "zipCode": "BS1 4ND"
+  },
+  {
+    "address": "15 Grey Street",
+    "city": "Newcastle",
+    "state": "Tyne and Wear",
+    "zipCode": "NE1 6EE"
+  }
+]
